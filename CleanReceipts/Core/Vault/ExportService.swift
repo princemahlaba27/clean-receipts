@@ -7,14 +7,45 @@ enum ExportKind {
     case both
 }
 
+struct TaxReportReceipt: Sendable {
+    var merchant: String
+    var formattedDate: String
+    var category: String
+    var amount: Double
+    var currencyCode: String
+    var pageImageData: [Data]
+}
+
+struct TaxReportSnapshot: Sendable {
+    var periodTitle: String
+    var receipts: [TaxReportReceipt]
+}
+
 final class ExportService {
     static let shared = ExportService()
 
-    func generateTaxPDF(for items: [ReceiptItem], periodTitle: String) -> Data {
-        let sorted = items.sorted { lhs, rhs in
-            if lhs.date != rhs.date { return lhs.date < rhs.date }
-            return lhs.createdAt < rhs.createdAt
+    func generateTaxPDF(
+        snapshot: TaxReportSnapshot,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async -> Data {
+        await Task.detached(priority: .userInitiated) { [self] in
+            self.renderTaxPDF(snapshot: snapshot, progress: progress)
+        }.value
+    }
+
+    private func renderTaxPDF(
+        snapshot: TaxReportSnapshot,
+        progress: @escaping @Sendable (Double) -> Void
+    ) -> Data {
+        let sorted = snapshot.receipts
+        let proofCount = sorted.reduce(0) { $0 + $1.pageImageData.count }
+        let totalSteps = max(1, 1 + proofCount)
+        var completedSteps = 0
+        func advance() {
+            completedSteps += 1
+            publishProgress(Double(completedSteps) / Double(totalSteps), progress)
         }
+        publishProgress(0, progress)
         let pageWidth: CGFloat = 612
         let pageHeight: CGFloat = 792
         let margin: CGFloat = 40
@@ -56,7 +87,7 @@ final class ExportService {
                 alignment: .left
             )
             draw(
-                "Period \(periodTitle)  ·  Generated \(generated)  ·  \(sorted.count) receipt\(sorted.count == 1 ? "" : "s")",
+                "Period \(snapshot.periodTitle)  ·  Generated \(generated)  ·  \(sorted.count) receipt\(sorted.count == 1 ? "" : "s")",
                 in: CGRect(x: margin, y: 66, width: pageWidth - margin * 2, height: 16),
                 font: .systemFont(ofSize: 11, weight: .regular),
                 color: .darkGray,
@@ -113,7 +144,7 @@ final class ExportService {
                 drawColumns(
                     date: item.formattedDate,
                     merchant: item.merchant,
-                    category: item.category.rawValue,
+                    category: item.category,
                     amount: currency.string(from: NSNumber(value: item.amount)) ?? String(format: "$%.2f", item.amount),
                     y: y,
                     font: .monospacedSystemFont(ofSize: 10, weight: .regular),
@@ -142,23 +173,29 @@ final class ExportService {
                 color: .black,
                 alignment: .right
             )
+            advance()
 
+            let imageBounds = CGRect(x: margin, y: 58, width: pageWidth - margin * 2, height: pageHeight - 110)
             for item in sorted {
-                let pages = item.orderedPages
+                let pages = item.pageImageData
                 guard !pages.isEmpty else { continue }
-                for (pageIndex, page) in pages.enumerated() {
-                    guard let image = UIImage(data: page.imageData) else { continue }
-                    startPage()
-                    let caption = "RECEIPT PROOF: \(item.merchant) — \(currency.string(from: NSNumber(value: item.amount)) ?? "") — \(item.formattedDate) — page \(pageIndex + 1) of \(pages.count)"
-                    draw(
-                        caption,
-                        in: CGRect(x: margin, y: 32, width: pageWidth - margin * 2, height: 18),
-                        font: .systemFont(ofSize: 11, weight: .semibold),
-                        color: .black,
-                        alignment: .left
-                    )
-                    let bounds = CGRect(x: margin, y: 58, width: pageWidth - margin * 2, height: pageHeight - 110)
-                    image.draw(in: aspectFitRect(imageSize: image.size, in: bounds))
+                for (pageIndex, pageData) in pages.enumerated() {
+                    autoreleasepool {
+                        let image = downsampledProofImage(from: pageData, fitting: imageBounds)
+                        if let image {
+                            startPage()
+                            let caption = "RECEIPT PROOF: \(item.merchant) — \(currency.string(from: NSNumber(value: item.amount)) ?? "") — \(item.formattedDate) — page \(pageIndex + 1) of \(pages.count)"
+                            draw(
+                                caption,
+                                in: CGRect(x: margin, y: 32, width: pageWidth - margin * 2, height: 18),
+                                font: .systemFont(ofSize: 11, weight: .semibold),
+                                color: .black,
+                                alignment: .left
+                            )
+                            image.draw(in: aspectFitRect(imageSize: image.size, in: imageBounds))
+                        }
+                    }
+                    advance()
                 }
             }
         }
@@ -261,6 +298,41 @@ final class ExportService {
         draw(merchant, in: CGRect(x: margin + 82, y: y, width: 180, height: 16), font: font, color: .black, alignment: .left)
         draw(category, in: CGRect(x: margin + 268, y: y, width: 140, height: 16), font: font, color: .black, alignment: .left)
         draw(amount, in: CGRect(x: pageWidth - margin - 90, y: y, width: 90, height: 16), font: font, color: .black, alignment: .right)
+    }
+
+    private static let proofDPI: CGFloat = 200
+
+    private func publishProgress(_ value: Double, _ progress: @escaping @Sendable (Double) -> Void) {
+        let clamped = min(1, max(0, value))
+        DispatchQueue.main.async {
+            progress(clamped)
+        }
+    }
+
+    /// Scales a stored scan to the proof-page rect at 200 DPI and returns a JPEG-backed image.
+    /// The full-resolution decode does not outlive this call.
+    private func downsampledProofImage(from data: Data, fitting bounds: CGRect) -> UIImage? {
+        guard let source = UIImage(data: data), source.size.width > 0, source.size.height > 0 else {
+            return nil
+        }
+        let fitted = aspectFitRect(imageSize: source.size, in: bounds)
+        let pixelsPerPoint = Self.proofDPI / 72
+        let pixelSize = CGSize(
+            width: max(1, floor(fitted.width * pixelsPerPoint)),
+            height: max(1, floor(fitted.height * pixelsPerPoint))
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: pixelSize, format: format)
+        let bitmap = renderer.image { _ in
+            source.draw(in: CGRect(origin: .zero, size: pixelSize))
+        }
+        guard let jpeg = bitmap.jpegData(compressionQuality: 0.72),
+              let compact = UIImage(data: jpeg) else {
+            return bitmap
+        }
+        return compact
     }
 
     private func aspectFitRect(imageSize: CGSize, in bounds: CGRect) -> CGRect {

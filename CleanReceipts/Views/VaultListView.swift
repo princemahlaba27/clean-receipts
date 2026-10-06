@@ -35,6 +35,9 @@ struct VaultListView: View {
     @State private var sharePayload: SharePayload?
     @State private var alertMessage: String?
     @State private var categoryRequest: CategoryRequest?
+    @State private var isExporting = false
+    @State private var exportProgress: Double = 0
+    @State private var exportGeneration = 0
     @ScaledMetric(relativeTo: .largeTitle) private var totalSize: CGFloat = 48
 
     private var vault: VaultViewModel { VaultViewModel(context: modelContext) }
@@ -250,6 +253,28 @@ struct VaultListView: View {
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.urls)
         }
+        .overlay {
+            if isExporting {
+                ZStack {
+                    Color.black.opacity(0.45).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        ProgressView(value: exportProgress)
+                            .tint(Color.industrialYellow)
+                        Text("Preparing tax report")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("\(Int((exportProgress * 100).rounded()))%")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(Color.labelSecondary)
+                    }
+                    .padding(24)
+                    .frame(maxWidth: 280)
+                    .glassCard()
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Preparing tax report, \(Int((exportProgress * 100).rounded())) percent")
+            }
+        }
         .alert("Clean Receipts", isPresented: Binding(
             get: { alertMessage != nil },
             set: { if !$0 { alertMessage = nil } }
@@ -341,7 +366,8 @@ struct VaultListView: View {
                         .opacity(0.7)
                 }
             }
-            .buttonStyle(YellowCapsuleButtonStyle())
+            .buttonStyle(YellowCapsuleButtonStyle(enabled: !isExporting))
+            .disabled(isExporting)
             .padding(.horizontal, 20)
             .accessibilityLabel("Export Tax Report for \(periodTitle)")
         }
@@ -414,31 +440,59 @@ struct VaultListView: View {
     }
 
     private func performExport(_ kind: ExportKind) {
+        guard !isExporting else { return }
         let items = filteredReceipts
         guard !items.isEmpty else {
             alertMessage = "No receipts in \(periodTitle) to export."
             return
         }
-        var urls: [URL] = []
-        if kind == .pdf || kind == .both {
-            let data = ExportService.shared.generateTaxPDF(for: items, periodTitle: periodTitle)
-            let name = ExportService.shared.exportFilename(period: periodTitle, ext: "pdf")
-            if let url = try? ExportService.shared.writeTemp(data: data, filename: name) {
-                urls.append(url)
+        let snapshot = TaxReportSnapshot(
+            periodTitle: periodTitle,
+            receipts: items.map { item in
+                TaxReportReceipt(
+                    merchant: item.merchant,
+                    formattedDate: item.formattedDate,
+                    category: item.category.rawValue,
+                    amount: item.amount,
+                    currencyCode: item.currencyCode,
+                    pageImageData: item.orderedPages.map(\.imageData)
+                )
             }
-        }
-        if kind == .csv || kind == .both {
-            let data = ExportService.shared.generateCSV(for: items)
-            let name = ExportService.shared.exportFilename(period: periodTitle, ext: "csv")
-            if let url = try? ExportService.shared.writeTemp(data: data, filename: name) {
-                urls.append(url)
+        )
+        let period = periodTitle
+        exportGeneration += 1
+        let generation = exportGeneration
+        isExporting = true
+        exportProgress = 0
+        Task { @MainActor in
+            var urls: [URL] = []
+            if kind == .pdf || kind == .both {
+                let data = await ExportService.shared.generateTaxPDF(snapshot: snapshot) { fraction in
+                    Task { @MainActor in
+                        guard exportGeneration == generation else { return }
+                        exportProgress = fraction
+                    }
+                }
+                let name = ExportService.shared.exportFilename(period: period, ext: "pdf")
+                if let url = try? ExportService.shared.writeTemp(data: data, filename: name) {
+                    urls.append(url)
+                }
             }
+            if kind == .csv || kind == .both {
+                let data = ExportService.shared.generateCSV(for: items)
+                let name = ExportService.shared.exportFilename(period: period, ext: "csv")
+                if let url = try? ExportService.shared.writeTemp(data: data, filename: name) {
+                    urls.append(url)
+                }
+            }
+            guard exportGeneration == generation else { return }
+            isExporting = false
+            guard !urls.isEmpty else {
+                alertMessage = "The report could not be created."
+                return
+            }
+            sharePayload = SharePayload(urls: urls)
         }
-        guard !urls.isEmpty else {
-            alertMessage = "The report could not be created."
-            return
-        }
-        sharePayload = SharePayload(urls: urls)
     }
 
     private func delete(_ item: ReceiptItem) {

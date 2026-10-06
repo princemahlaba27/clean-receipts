@@ -121,16 +121,62 @@ final class VisionOCRService {
         }
     }
 
+    private struct OCRToken {
+        var text: String
+        var box: CGRect
+
+        var midY: CGFloat { box.midY }
+    }
+
+    /// Vision returns one box per text run, so a left-aligned label and a right-aligned
+    /// amount on the same baseline arrive as two strings. Cluster boxes that share a
+    /// vertical band, then read each band left to right.
     private static func orderedLines(from observations: [VNRecognizedTextObservation]?) -> [String] {
-        guard let observations else { return [] }
-        let sorted = observations.sorted { lhs, rhs in
-            let delta = lhs.boundingBox.midY - rhs.boundingBox.midY
-            if abs(delta) > 0.015 {
-                return lhs.boundingBox.midY > rhs.boundingBox.midY
+        guard let observations, !observations.isEmpty else { return [] }
+        let tokens: [OCRToken] = observations.compactMap { observation in
+            guard let text = observation.topCandidates(1).first?.string
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else {
+                return nil
             }
-            return lhs.boundingBox.minX < rhs.boundingBox.minX
+            return OCRToken(text: text, box: observation.boundingBox)
         }
-        return sorted.compactMap { $0.topCandidates(1).first?.string }
+        let sorted = tokens.sorted { lhs, rhs in
+            if lhs.midY != rhs.midY {
+                return lhs.midY > rhs.midY
+            }
+            return lhs.box.minX < rhs.box.minX
+        }
+
+        var rows: [[OCRToken]] = []
+        for token in sorted {
+            if let index = rows.indices.last, sameRow(token, as: rows[index]) {
+                rows[index].append(token)
+            } else {
+                rows.append([token])
+            }
+        }
+
+        return rows.map { row in
+            row.sorted { $0.box.minX < $1.box.minX }
+                .map(\.text)
+                .joined(separator: " ")
+        }
+    }
+
+    private static func sameRow(_ token: OCRToken, as row: [OCRToken]) -> Bool {
+        let rowTop = row.map { $0.box.maxY }.max() ?? token.midY
+        let rowBottom = row.map { $0.box.minY }.min() ?? token.midY
+        let overlap = min(rowTop, token.box.maxY) - max(rowBottom, token.box.minY)
+        if overlap > 0 {
+            return true
+        }
+        let mids = row.map(\.midY).sorted()
+        let heights = row.map(\.box.height).sorted()
+        let medianMid = mids[mids.count / 2]
+        let medianHeight = heights[heights.count / 2]
+        let limit = max(medianHeight, token.box.height) / 2
+        return abs(token.midY - medianMid) <= limit
     }
 
     private func detectMerchant(in lines: [String]) -> String? {
