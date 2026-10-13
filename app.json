@@ -17,7 +17,9 @@
     },
     "android": {
       "package": "com.cleanreceipts.app",
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "plugins": [
       "expo-sqlite",
@@ -28,6 +30,11 @@
           "cameraPermission": "Tax Receipts uses the camera to scan receipts. Images stay on this device."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d5495531-b471-466c-835f-640dc5382a4a"
+      }
+    }
   }
 }
