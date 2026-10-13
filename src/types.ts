@@ -1,13 +1,7 @@
-export const CATEGORIES = [
-  'Meals & Dining',
-  'Travel',
-  'Office Supplies',
-  'Fuel',
-  'Software',
-  'Other',
-] as const;
+import type { Category } from './services/receiptParser';
 
-export type Category = (typeof CATEGORIES)[number];
+export type { Category };
+export { CATEGORIES } from './services/receiptParser';
 
 export type LineItem = {
   id: string;

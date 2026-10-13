@@ -1,8 +1,8 @@
 import * as SQLite from 'expo-sqlite';
 
-import { isCategory } from '../services/receiptParser';
+import { isCategory, type Category } from '../services/receiptParser';
 import { createId } from '../services/ids';
-import type { Category, LineItem, StoredReceipt } from '../types';
+import type { LineItem, StoredReceipt } from '../types';
 
 type ReceiptRow = {
   id: string;

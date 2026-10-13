@@ -1,4 +1,4 @@
-import { CATEGORIES, type Category, type LineItem } from '../types';
+import type { LineItem } from '../types';
 import { createId } from './ids';
 
 const MONEY_PATTERN = /\$?\s*(?:\d{1,3}(?:[.,]\d{3})+[.,]\d{2}|\d+[.,]\d{2})/g;
@@ -199,7 +199,7 @@ function suggestCategory(merchant: string, lines: string[]): Category {
   const rules: Array<[Category, string[]]> = [
     ['Fuel', ['shell', 'chevron', 'exxon', 'fuel', 'gas station', 'petrol']],
     ['Software', ['adobe', 'github', 'software', 'saas', 'google workspace']],
-    ['Travel', ['uber', 'lyft', 'airline', 'delta air', 'united air', 'hotel', 'airbnb', 'parking']],
+    ['Travel & Transport', ['uber', 'lyft', 'airline', 'delta air', 'united air', 'hotel', 'airbnb', 'parking']],
     ['Office Supplies', ['staples', 'office depot', 'office supplies']],
     ['Meals & Dining', ['starbucks', 'cafe', 'coffee', 'restaurant', 'mcdonald', 'doordash', 'grubhub', 'dining', 'pizza']],
   ];
@@ -277,6 +277,23 @@ function todayIso(): string {
 function letterCount(line: string): number {
   return [...line].filter((char) => /\p{L}/u.test(char)).length;
 }
+
+export type Category =
+  | 'Meals & Dining'
+  | 'Travel & Transport'
+  | 'Office Supplies'
+  | 'Fuel'
+  | 'Software'
+  | 'Other';
+
+export const CATEGORIES: readonly Category[] = [
+  'Meals & Dining',
+  'Travel & Transport',
+  'Office Supplies',
+  'Fuel',
+  'Software',
+  'Other',
+];
 
 export function isCategory(value: string): value is Category {
   return (CATEGORIES as readonly string[]).includes(value);
