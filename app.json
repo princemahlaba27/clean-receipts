@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Tax Receipts: Scan PDF & Vault",
+    "slug": "tax-receipts",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "cleanreceipts",
+    "ios": {
+      "bundleIdentifier": "com.cleanreceipts.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "CFBundleDisplayName": "Tax Receipts",
+        "NSCameraUsageDescription": "Tax Receipts uses the camera to scan receipts. Images stay on this device.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.cleanreceipts.app",
+      "permissions": ["android.permission.CAMERA"]
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-sharing",
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "Tax Receipts uses the camera to scan receipts. Images stay on this device."
+        }
+      ]
+    ]
+  }
+}
