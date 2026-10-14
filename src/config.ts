@@ -1,7 +1,7 @@
 export const REVENUECAT_API_KEY = 'appl_bktuWdyiFioaDjjLrHLUpZfwpWv';
 
-/** Live RevenueCat products currently attach to "Clean Receipts Pro". This spec uses "pro". */
-export const ENTITLEMENT_ID = 'pro';
+/** Dashboard entitlement is "Clean Receipts Pro". Older builds also check "pro". */
+export const ENTITLEMENT_IDS = ['Clean Receipts Pro', 'pro'] as const;
 
 export const WEEKLY_PRODUCT_ID = 'cleanreceipts_weekly_intro';
 export const ANNUAL_PRODUCT_ID = 'cleanreceipts_annual_trial';

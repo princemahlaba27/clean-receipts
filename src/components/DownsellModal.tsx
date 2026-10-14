@@ -5,9 +5,8 @@ import { colors } from '../theme/tokens';
 
 export function DownsellModal() {
   const billing = useBilling();
-  if (!billing.downsellVisible) return null;
   return (
-    <Modal animationType="fade" transparent visible onRequestClose={billing.closeDownsell}>
+    <Modal animationType="fade" transparent visible={billing.downsellVisible} onRequestClose={billing.closeDownsell}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <Text style={styles.kicker}>One-time offer</Text>

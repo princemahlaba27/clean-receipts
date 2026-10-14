@@ -16,9 +16,8 @@ const STEPS = [
 export function PaywallModal() {
   const billing = useBilling();
   const [annual, setAnnual] = useState(true);
-  if (!billing.paywallVisible) return null;
   return (
-    <Modal animationType="slide" visible onRequestClose={billing.closePaywall}>
+    <Modal animationType="slide" visible={billing.paywallVisible} onRequestClose={billing.closePaywall}>
       <SafeAreaView style={styles.screen}>
           <View style={styles.top}>
             <Pressable accessibilityLabel="Close" onPress={billing.closePaywall}><Text style={styles.close}>✕</Text></Pressable>
@@ -40,11 +39,11 @@ export function PaywallModal() {
                 <Text style={styles.planTitle}>Annual</Text>
                 <Text style={styles.badge}>SAVE 89%</Text>
               </View>
-              <Text style={styles.planBody}>3-day free trial, then {billing.annual}/year ($3.33/mo)</Text>
+              <Text style={styles.planBody}>{billing.annualLine}</Text>
             </Pressable>
             <Pressable onPress={() => setAnnual(false)} style={[styles.plan, !annual && styles.planOn]}>
               <Text style={styles.planTitle}>Weekly</Text>
-              <Text style={styles.planBody}>{billing.weeklyIntro} for 7 days, then {billing.weeklyRenewal}/week</Text>
+              <Text style={styles.planBody}>{billing.weeklyLine}</Text>
             </Pressable>
             {billing.lastError ? <Text style={styles.error}>{billing.lastError}</Text> : null}
           </ScrollView>
@@ -54,7 +53,7 @@ export function PaywallModal() {
               onPress={() => { void (annual ? billing.purchaseAnnual() : billing.purchaseWeekly()); }}
               style={styles.cta}
             >
-              <Text style={styles.ctaText}>{billing.loading ? 'Working…' : 'Start My Free Trial'}</Text>
+              <Text style={styles.ctaText}>{billing.loading ? 'Working…' : annual ? 'Start My Free Trial' : 'Continue'}</Text>
             </Pressable>
             <Text style={styles.legal}>
               <Text onPress={() => { void billing.restore(); }}>Restore Purchases</Text>

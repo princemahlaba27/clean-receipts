@@ -4,8 +4,14 @@
     "slug": "tax-receipts",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "cleanreceipts",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F7F8FA"
+    },
     "ios": {
       "bundleIdentifier": "com.cleanreceipts.app",
       "supportsTablet": true,

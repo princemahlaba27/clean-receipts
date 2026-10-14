@@ -8,11 +8,18 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import Purchases, { type PurchasesPackage } from 'react-native-purchases';
+import { Platform } from 'react-native';
+import Purchases, {
+  PURCHASES_ERROR_CODE,
+  type CustomerInfo,
+  type PurchasesIntroPrice,
+  type PurchasesPackage,
+  type PurchasesStoreProduct,
+} from 'react-native-purchases';
 
 import {
   ANNUAL_PRODUCT_ID,
-  ENTITLEMENT_ID,
+  ENTITLEMENT_IDS,
   FALLBACK_PRICES,
   MONTHLY_PRODUCT_ID,
   REVENUECAT_API_KEY,
@@ -20,9 +27,8 @@ import {
 } from '../config';
 
 type Prices = {
-  weeklyIntro: string;
-  weeklyRenewal: string;
-  annual: string;
+  annualLine: string;
+  weeklyLine: string;
   downsellIntro: string;
   downsellRenewal: string;
 };
@@ -43,6 +49,14 @@ type BillingContextValue = Prices & {
 };
 
 const BillingContext = createContext<BillingContextValue | null>(null);
+const FALLBACK: Prices = {
+  annualLine: `3-day free trial, then ${FALLBACK_PRICES.annual}/year`,
+  weeklyLine: `${FALLBACK_PRICES.weeklyIntro} for 7 days, then ${FALLBACK_PRICES.weeklyRenewal}/week`,
+  downsellIntro: FALLBACK_PRICES.downsellIntro,
+  downsellRenewal: FALLBACK_PRICES.downsellRenewal,
+};
+
+let configured = false;
 
 export function BillingProvider({ children }: { children: ReactNode }) {
   const [isPro, setIsPro] = useState(false);
@@ -50,67 +64,97 @@ export function BillingProvider({ children }: { children: ReactNode }) {
   const [lastError, setLastError] = useState<string | null>(null);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [downsellVisible, setDownsellVisible] = useState(false);
-  const [prices, setPrices] = useState<Prices>(FALLBACK_PRICES);
-  const [weekly, setWeekly] = useState<PurchasesPackage | null>(null);
-  const [annual, setAnnual] = useState<PurchasesPackage | null>(null);
-  const [monthly, setMonthly] = useState<PurchasesPackage | null>(null);
+  const [prices, setPrices] = useState<Prices>(FALLBACK);
+  const packages = useRef<{ weekly: PurchasesPackage | null; annual: PurchasesPackage | null; monthly: PurchasesPackage | null }>({
+    weekly: null,
+    annual: null,
+    monthly: null,
+  });
   const pending = useRef<(() => void) | null>(null);
 
   const refresh = useCallback(async () => {
+    if (Platform.OS !== 'ios') return;
     const info = await Purchases.getCustomerInfo();
-    setIsPro(Boolean(info.entitlements.active[ENTITLEMENT_ID]));
+    setIsPro(hasAccess(info));
     const offerings = await Purchases.getOfferings();
-    const packages = Object.values(offerings.all).flatMap((offering) => offering.availablePackages);
-    const weeklyPackage = findPackage(packages, WEEKLY_PRODUCT_ID);
-    const annualPackage = findPackage(packages, ANNUAL_PRODUCT_ID);
-    const monthlyPackage = findPackage(packages, MONTHLY_PRODUCT_ID);
-    setWeekly(weeklyPackage);
-    setAnnual(annualPackage);
-    setMonthly(monthlyPackage);
+    const available = Object.values(offerings.all).flatMap((offering) => offering.availablePackages);
+    const weekly = findPackage(available, WEEKLY_PRODUCT_ID);
+    const annual = findPackage(available, ANNUAL_PRODUCT_ID);
+    const monthly = findPackage(available, MONTHLY_PRODUCT_ID);
+    packages.current = { weekly, annual, monthly };
     setPrices({
-      weeklyIntro: weeklyPackage?.product.introPrice?.priceString ?? FALLBACK_PRICES.weeklyIntro,
-      weeklyRenewal: weeklyPackage?.product.priceString ?? FALLBACK_PRICES.weeklyRenewal,
-      annual: annualPackage?.product.priceString ?? FALLBACK_PRICES.annual,
-      downsellIntro: monthlyPackage?.product.introPrice?.priceString ?? FALLBACK_PRICES.downsellIntro,
-      downsellRenewal: monthlyPackage?.product.priceString ?? FALLBACK_PRICES.downsellRenewal,
+      annualLine: annualLine(annual?.product ?? null),
+      weeklyLine: weeklyLine(weekly?.product ?? null),
+      downsellIntro: monthly?.product.introPrice?.priceString ?? monthly?.product.priceString ?? FALLBACK.downsellIntro,
+      downsellRenewal: monthly?.product.priceString ?? FALLBACK.downsellRenewal,
     });
   }, []);
 
   useEffect(() => {
-    Purchases.configure({ apiKey: REVENUECAT_API_KEY });
-    refresh().catch((error: unknown) => {
-      setLastError(error instanceof Error ? error.message : 'Plans could not be loaded.');
+    if (Platform.OS !== 'ios') return;
+    if (!configured) {
+      Purchases.configure({ apiKey: REVENUECAT_API_KEY });
+      configured = true;
+    }
+    const listener = (info: CustomerInfo) => setIsPro(hasAccess(info));
+    Purchases.addCustomerInfoUpdateListener(listener);
+    refresh().catch(() => {
+      // Keep the App Store fallback prices. The purchase path loads the product again.
     });
+    return () => {
+      Purchases.removeCustomerInfoUpdateListener(listener);
+    };
   }, [refresh]);
 
-  const grant = useCallback((active: boolean) => {
+  const grant = useCallback((info: CustomerInfo) => {
+    const active = hasAccess(info);
     setIsPro(active);
     if (!active) return;
     setPaywallVisible(false);
     setDownsellVisible(false);
+    setLastError(null);
     const next = pending.current;
     pending.current = null;
     next?.();
   }, []);
 
-  const buy = useCallback(async (pack: PurchasesPackage | null) => {
-    if (!pack) {
-      setLastError('This plan is not available yet.');
+  const buy = useCallback(async (productId: string, current: PurchasesPackage | null) => {
+    if (Platform.OS !== 'ios') {
+      setLastError('Purchases open in the iOS app.');
       return;
     }
     setLoading(true);
     setLastError(null);
     try {
-      const result = await Purchases.purchasePackage(pack);
-      grant(Boolean(result.customerInfo.entitlements.active[ENTITLEMENT_ID]));
-    } catch (error: unknown) {
-      if (!isCancelled(error)) {
-        setLastError(error instanceof Error ? error.message : 'The purchase could not be completed.');
+      let selected = current;
+      if (!selected) {
+        await refresh();
+        selected = productId === WEEKLY_PRODUCT_ID
+          ? packages.current.weekly
+          : productId === ANNUAL_PRODUCT_ID
+            ? packages.current.annual
+            : packages.current.monthly;
       }
+      const result = selected
+        ? await Purchases.purchasePackage(selected)
+        : await purchaseStoreProduct(productId);
+      grant(result.customerInfo);
+      if (!hasAccess(result.customerInfo)) {
+        setLastError('The App Store purchase finished, but access is not active yet. Try Restore Purchases.');
+      }
+    } catch (error: unknown) {
+      if (isCancelled(error)) return;
+      if (isCode(error, PURCHASES_ERROR_CODE.PRODUCT_ALREADY_PURCHASED_ERROR)) {
+        const info = await Purchases.restorePurchases();
+        grant(info);
+        if (!hasAccess(info)) setLastError('This Apple ID already purchased the plan. Restore did not find an active subscription.');
+        return;
+      }
+      setLastError(purchaseMessage(error));
     } finally {
       setLoading(false);
     }
-  }, [grant]);
+  }, [grant, refresh]);
 
   const value = useMemo<BillingContextValue>(() => ({
     ...prices,
@@ -126,6 +170,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       }
       pending.current = onGranted;
       setLastError(null);
+      setDownsellVisible(false);
       setPaywallVisible(true);
     },
     closePaywall: () => {
@@ -136,24 +181,27 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       setDownsellVisible(false);
       pending.current = null;
     },
-    purchaseWeekly: () => buy(weekly),
-    purchaseAnnual: () => buy(annual),
-    purchaseMonthly: () => buy(monthly),
+    purchaseWeekly: () => buy(WEEKLY_PRODUCT_ID, packages.current.weekly),
+    purchaseAnnual: () => buy(ANNUAL_PRODUCT_ID, packages.current.annual),
+    purchaseMonthly: () => buy(MONTHLY_PRODUCT_ID, packages.current.monthly),
     restore: async () => {
+      if (Platform.OS !== 'ios') {
+        setLastError('Purchases open in the iOS app.');
+        return;
+      }
       setLoading(true);
       setLastError(null);
       try {
         const info = await Purchases.restorePurchases();
-        const active = Boolean(info.entitlements.active[ENTITLEMENT_ID]);
-        if (!active) setLastError('No purchases to restore.');
-        grant(active);
+        if (!hasAccess(info)) setLastError('No active subscription was found for this Apple ID.');
+        grant(info);
       } catch (error: unknown) {
-        setLastError(error instanceof Error ? error.message : 'Restore failed.');
+        if (!isCancelled(error)) setLastError(purchaseMessage(error));
       } finally {
         setLoading(false);
       }
     },
-  }), [annual, buy, downsellVisible, grant, isPro, lastError, loading, monthly, paywallVisible, prices, weekly]);
+  }), [buy, downsellVisible, grant, isPro, lastError, loading, paywallVisible, prices]);
 
   return <BillingContext.Provider value={value}>{children}</BillingContext.Provider>;
 }
@@ -164,10 +212,76 @@ export function useBilling(): BillingContextValue {
   return value;
 }
 
-function findPackage(packages: PurchasesPackage[], productId: string): PurchasesPackage | null {
-  return packages.find((pack) => pack.product.identifier === productId) ?? null;
+async function purchaseStoreProduct(productId: string) {
+  const products = await Purchases.getProducts([productId]);
+  const product = products.find((item) => item.identifier === productId || item.identifier.startsWith(`${productId}:`));
+  if (!product) throw new Error('This plan is not available in the App Store yet.');
+  return Purchases.purchaseStoreProduct(product);
+}
+
+function findPackage(available: PurchasesPackage[], productId: string): PurchasesPackage | null {
+  return available.find((pack) => {
+    const id = pack.product.identifier;
+    return id === productId || id.startsWith(`${productId}:`);
+  }) ?? null;
+}
+
+function hasAccess(info: CustomerInfo): boolean {
+  const active = info.entitlements.active;
+  if (ENTITLEMENT_IDS.some((id) => active[id])) return true;
+  return Object.keys(active).length > 0;
+}
+
+function annualLine(product: PurchasesStoreProduct | null): string {
+  if (!product) return FALLBACK.annualLine;
+  const perMonth = product.pricePerMonthString ? ` (${product.pricePerMonthString}/mo)` : '';
+  const intro = product.introPrice;
+  if (intro && intro.price === 0 && intro.periodUnit === 'DAY') {
+    return `${intro.periodNumberOfUnits}-day free trial, then ${product.priceString}/year${perMonth}`;
+  }
+  if (intro && intro.price === 0) return `Free trial, then ${product.priceString}/year${perMonth}`;
+  return `${product.priceString}/year${perMonth}`;
+}
+
+function weeklyLine(product: PurchasesStoreProduct | null): string {
+  if (!product) return FALLBACK.weeklyLine;
+  const intro = product.introPrice;
+  if (intro && intro.price > 0) return `${intro.priceString} for ${introPhrase(intro)}, then ${product.priceString}/week`;
+  return `${product.priceString}/week`;
+}
+
+function introPhrase(intro: PurchasesIntroPrice): string {
+  const count = intro.periodNumberOfUnits;
+  if (intro.periodUnit === 'DAY') return count === 1 ? '1 day' : `${count} days`;
+  if (intro.periodUnit === 'WEEK') return count === 1 ? '7 days' : `${count} weeks`;
+  if (intro.periodUnit === 'MONTH') return count === 1 ? 'the first month' : `${count} months`;
+  if (intro.periodUnit === 'YEAR') return count === 1 ? '1 year' : `${count} years`;
+  return intro.period;
 }
 
 function isCancelled(error: unknown): boolean {
-  return typeof error === 'object' && error != null && 'userCancelled' in error && Boolean((error as { userCancelled?: boolean }).userCancelled);
+  return isCode(error, PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) || (typeof error === 'object' && error != null && 'userCancelled' in error && Boolean((error as { userCancelled?: boolean }).userCancelled));
+}
+
+function isCode(error: unknown, code: PURCHASES_ERROR_CODE): boolean {
+  return typeof error === 'object' && error != null && 'code' in error && (error as { code?: string }).code === code;
+}
+
+function purchaseMessage(error: unknown): string {
+  if (isCode(error, PURCHASES_ERROR_CODE.NETWORK_ERROR) || isCode(error, PURCHASES_ERROR_CODE.OFFLINE_CONNECTION_ERROR)) {
+    return 'The App Store could not be reached. Check your connection and try again.';
+  }
+  if (isCode(error, PURCHASES_ERROR_CODE.PRODUCT_NOT_AVAILABLE_FOR_PURCHASE_ERROR)) {
+    return 'This plan is not available in the App Store yet.';
+  }
+  if (isCode(error, PURCHASES_ERROR_CODE.PURCHASE_NOT_ALLOWED_ERROR)) {
+    return 'Purchases are not allowed on this device.';
+  }
+  if (isCode(error, PURCHASES_ERROR_CODE.PAYMENT_PENDING_ERROR)) {
+    return 'The payment is pending approval.';
+  }
+  if (isCode(error, PURCHASES_ERROR_CODE.STORE_PROBLEM_ERROR)) {
+    return 'The App Store could not complete the payment. Please try again.';
+  }
+  return error instanceof Error ? error.message : 'The purchase could not be completed.';
 }
