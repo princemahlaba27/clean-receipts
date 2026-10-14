@@ -2,6 +2,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
+import { ESTIMATED_TAX_RATE } from '../config';
 import { formatIsoDate, formatMoney } from '../format';
 import type { StoredReceipt } from '../types';
 import type { LocaleProfile } from './currency';
@@ -37,7 +38,7 @@ export async function exportDossier(
   await Sharing.shareAsync(pdf.uri, {
     mimeType: 'application/pdf',
     UTI: 'com.adobe.pdf',
-    dialogTitle: 'Export Expense Report',
+    dialogTitle: 'Tax Expense Statement',
   });
 }
 
@@ -55,65 +56,75 @@ async function downscaleProof(uri: string): Promise<string> {
 
 function renderHtml(receipts: StoredReceipt[], proofs: string[], periodTitle: string, locale: LocaleProfile): string {
   const rows = receipts
-    .map((receipt, index) => {
+    .map((receipt) => {
       return `<tr>
-        <td>${index + 1}</td>
         <td>${escapeHtml(formatIsoDate(receipt.date))}</td>
         <td>${escapeHtml(receipt.merchant)}</td>
         <td>${escapeHtml(receipt.category)}</td>
-        <td>${escapeHtml(formatMoney(receipt.tax, locale))}</td>
-        <td>${escapeHtml(formatMoney(receipt.total, locale))}</td>
+        <td class="num">${escapeHtml(formatMoney(receipt.tax, locale))}</td>
+        <td class="num">${escapeHtml(formatMoney(receipt.total, locale))}</td>
       </tr>`;
     })
     .join('');
-  const byCategory = new Map<string, number>();
-  for (const receipt of receipts) {
-    byCategory.set(receipt.category, (byCategory.get(receipt.category) ?? 0) + receipt.total);
-  }
-  const summary = [...byCategory.entries()]
-    .map(
-      ([category, amount]) =>
-        `<tr><td>${escapeHtml(category)}</td><td>${escapeHtml(formatMoney(amount, locale))}</td></tr>`,
-    )
-    .join('');
-  const taxTotal = receipts.reduce((sum, receipt) => sum + receipt.tax, 0);
-  const total = receipts.reduce((sum, receipt) => sum + receipt.total, 0);
-  const images = receipts
+  const gross = receipts.reduce((sum, receipt) => sum + receipt.total, 0);
+  const deductible = receipts.reduce((sum, receipt) => sum + (receipt.deductible ? receipt.total : 0), 0);
+  const savings = deductible * ESTIMATED_TAX_RATE;
+  const figures = receipts
     .map((receipt, index) => {
-      const src = proofs[index];
+      const src = proofs[index]?.replace(/"/g, '%22');
       if (!src) return '';
-      return `<figure><figcaption>#${index + 1} ${escapeHtml(receipt.merchant)} · ${escapeHtml(formatMoney(receipt.total, locale))}</figcaption><img src="${src}" /></figure>`;
+      return `<figure><figcaption>${escapeHtml(formatIsoDate(receipt.date))} · ${escapeHtml(receipt.merchant)} · ${escapeHtml(formatMoney(receipt.total, locale))}</figcaption><img src="${src}" alt="" /></figure>`;
     })
+    .filter(Boolean)
     .join('');
+  const proofsSection = figures ? `<section class="proofs">${figures}</section>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />
     <style>
-      body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #101828; background: #fff; margin: 32px; }
+      @page { margin: 0; }
+      body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #101828; background: #fff; margin: 0; }
+      .statement { padding: 32px; }
       h1 { font-size: 28px; margin: 0; }
-      .meta { color: #667085; margin: 6px 0 24px; }
-      table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-      th { text-align: left; font-size: 11px; letter-spacing: 0.06em; color: #667085; border-bottom: 1px solid #E4E7EC; padding: 8px 6px; }
-      td { border-bottom: 1px solid #F2F4F7; padding: 10px 6px; font-size: 13px; }
-      h2 { font-size: 16px; margin: 28px 0 8px; }
-      figure { margin: 0 0 18px; page-break-inside: avoid; }
-      figcaption { font-size: 12px; color: #667085; margin-bottom: 6px; }
-      img { width: 280px; border: 1px solid #E4E7EC; border-radius: 12px; }
+      .meta { color: #667085; margin: 8px 0 24px; line-height: 1.5; }
+      table { width: 100%; border-collapse: collapse; }
+      th { text-align: left; font-size: 11px; letter-spacing: 0.04em; color: #667085; border-bottom: 1px solid #E4E7EC; padding: 8px 6px; }
+      td { border-bottom: 1px solid #F2F4F7; padding: 10px 6px; font-size: 13px; vertical-align: top; }
+      th.num, td.num { text-align: right; white-space: nowrap; }
+      .totals { margin-top: 22px; margin-left: auto; width: 340px; }
+      .totals div { display: flex; justify-content: flex-end; gap: 18px; padding: 7px 0; border-bottom: 1px solid #F2F4F7; }
+      .totals span { color: #667085; }
+      .totals strong { min-width: 120px; text-align: right; }
+      .proofs { page-break-before: always; break-before: page; }
+      figure { margin: 0; page-break-inside: avoid; break-inside: avoid; }
+      figcaption { font-size: 12px; color: #667085; padding: 16px 16px 8px; }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        filter: grayscale(1) contrast(1.5);
+        -webkit-filter: grayscale(1) contrast(1.5);
+      }
     </style></head><body>
-    <h1>Expense Report</h1>
-    <p class="meta">${escapeHtml(periodTitle)} · Currency ${escapeHtml(locale.code)} · ${escapeHtml(locale.taxName)}</p>
-    <table>
-      <thead><tr><th>#</th><th>DATE</th><th>MERCHANT</th><th>CATEGORY</th><th>VAT/TAX</th><th>TOTAL</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="6">No receipts in this period.</td></tr>'}</tbody>
-    </table>
-    <h2>Summary</h2>
-    <table>
-      <thead><tr><th>CATEGORY</th><th>AMOUNT</th></tr></thead>
-      <tbody>${summary}</tbody>
-    </table>
-    <p><strong>${escapeHtml(locale.taxName)}</strong> ${escapeHtml(formatMoney(taxTotal, locale))}<br/>
-    <strong>Total</strong> ${escapeHtml(formatMoney(total, locale))}</p>
-    <h2>Receipts</h2>
-    ${images}
+    <section class="statement">
+      <h1>Tax Expense Statement</h1>
+      <p class="meta">Period ${escapeHtml(periodTitle)}<br/>Generated ${escapeHtml(todayLabel())}<br/>Currency ${escapeHtml(locale.code)}</p>
+      <table>
+        <thead><tr><th>Date</th><th>Vendor / Merchant</th><th>Category</th><th class="num">VAT / Tax</th><th class="num">Total</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5">No receipts in this period.</td></tr>'}</tbody>
+      </table>
+      <div class="totals">
+        <div><span>Total Gross Expenses</span><strong>${escapeHtml(formatMoney(gross, locale))}</strong></div>
+        <div><span>Total Deductibles</span><strong>${escapeHtml(formatMoney(deductible, locale))}</strong></div>
+        <div><span>Estimated Tax Savings</span><strong>${escapeHtml(formatMoney(savings, locale))}</strong></div>
+      </div>
+    </section>
+    ${proofsSection}
     </body></html>`;
+}
+
+function todayLabel(): string {
+  const now = new Date();
+  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return formatIsoDate(iso);
 }
 
 function renderCsv(receipts: StoredReceipt[], locale: LocaleProfile): string {

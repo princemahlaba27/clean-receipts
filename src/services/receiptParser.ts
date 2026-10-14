@@ -181,7 +181,7 @@ function detectReference(lines: string[]): string {
 }
 
 function detectLineItems(lines: string[]): LineItem[] {
-  const skip = /subtotal|sub-total|sub total|\btotal\b|\btax\b|\bvat\b|\bgst\b|\bdate\b|reference|receipt|thank you/i;
+  const skip = /subtotal|sub-total|sub total|\btotal\b|\btax\b|\bvat\b|\bgst\b|\bdate\b|reference|receipt|thank you|\binclusive\b|\bexclusive\b|\bspeedpoint\b|\bdownload\b|\bapp\b|\bslip\b|\bcashier\b|\bcard\b|\bauth\b|\bchange\b/i;
   const items: LineItem[] = [];
   for (const line of lines) {
     if (skip.test(line)) continue;
@@ -194,16 +194,26 @@ function detectLineItems(lines: string[]): LineItem[] {
   return items;
 }
 
+const REFRESHMENT_TOKENS = ['stoney', 'coke', 'sprite', 'water', 'soda', 'coffee', 'snack', 'bread', 'freshstop'];
+const FUEL_TOKENS = ['petrol', 'diesel', 'unleaded', 'fuel', 'litres'];
+
+function lineHasToken(line: string, tokens: string[]): boolean {
+  const lower = line.toLowerCase();
+  return tokens.some((token) => lower.includes(token));
+}
+
 function suggestCategory(merchant: string, lines: string[]): Category {
-  const text = [merchant, ...lines.slice(0, 8)].join(' ').toLowerCase();
+  const haystack = [merchant, ...lines];
+  if (haystack.some((line) => lineHasToken(line, REFRESHMENT_TOKENS))) return 'Business Meals & Refreshments';
+  if (haystack.some((line) => lineHasToken(line, FUEL_TOKENS))) return 'Fuel & Mileage';
+  const text = haystack.join(' ').toLowerCase();
   const rules: Array<[Category, string[]]> = [
-    ['Fuel & Mileage', ['shell', 'chevron', 'exxon', 'astron', 'fuel', 'gas station', 'petrol', 'mileage']],
     ['Software', ['adobe', 'github', 'software', 'saas', 'google workspace']],
     ['Travel', ['uber', 'lyft', 'airline', 'delta air', 'united air', 'hotel', 'airbnb', 'parking']],
     ['Tools & Equipment', ['home depot', 'tool', 'equipment']],
     ['Utilities', ['utility', 'electric', 'comcast', 'vodacom']],
     ['Supplies & Materials', ['staples', 'office depot', 'office supplies', 'supplies']],
-    ['Business Meals', ['starbucks', 'cafe', 'coffee', 'restaurant', 'mcdonald', 'doordash', 'grubhub', 'dining', 'pizza']],
+    ['Business Meals & Refreshments', ['starbucks', 'cafe', 'restaurant', 'mcdonald', 'doordash', 'grubhub', 'dining', 'pizza']],
   ];
   for (const [category, keys] of rules) {
     if (keys.some((key) => text.includes(key))) return category;
@@ -283,7 +293,7 @@ function letterCount(line: string): number {
 export type Category =
   | 'Supplies & Materials'
   | 'Fuel & Mileage'
-  | 'Business Meals'
+  | 'Business Meals & Refreshments'
   | 'Tools & Equipment'
   | 'Software'
   | 'Travel'
@@ -293,7 +303,7 @@ export type Category =
 export const CATEGORIES: readonly Category[] = [
   'Supplies & Materials',
   'Fuel & Mileage',
-  'Business Meals',
+  'Business Meals & Refreshments',
   'Tools & Equipment',
   'Software',
   'Travel',
@@ -304,7 +314,7 @@ export const CATEGORIES: readonly Category[] = [
 export const CATEGORY_EMOJI: Record<Category, string> = {
   'Supplies & Materials': '📎',
   'Fuel & Mileage': '⛽',
-  'Business Meals': '🍔',
+  'Business Meals & Refreshments': '🍔',
   'Tools & Equipment': '🛠️',
   Software: '🖥️',
   Travel: '✈️',

@@ -130,6 +130,7 @@ export async function insertReceipt(input: {
 }
 
 function categoryOrOther(value: string): Category {
+  if (value === 'Business Meals') return 'Business Meals & Refreshments';
   return isCategory(value) ? value : 'Other';
 }
 

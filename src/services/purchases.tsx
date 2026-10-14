@@ -25,6 +25,7 @@ import {
   REVENUECAT_API_KEY,
   WEEKLY_PRODUCT_ID,
 } from '../config';
+import { scheduleTrialReminder } from './trialReminder';
 
 type Prices = {
   annualLine: string;
@@ -35,6 +36,7 @@ type Prices = {
 
 type BillingContextValue = Prices & {
   isPro: boolean;
+  isProNow: () => boolean;
   loading: boolean;
   lastError: string | null;
   paywallVisible: boolean;
@@ -60,6 +62,7 @@ let configured = false;
 
 export function BillingProvider({ children }: { children: ReactNode }) {
   const [isPro, setIsPro] = useState(false);
+  const isProRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -71,24 +74,30 @@ export function BillingProvider({ children }: { children: ReactNode }) {
     monthly: null,
   });
   const pending = useRef<(() => void) | null>(null);
+  const setPro = useCallback((active: boolean) => {
+    isProRef.current = active;
+    setIsPro(active);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (Platform.OS !== 'ios') return;
     const info = await Purchases.getCustomerInfo();
-    setIsPro(hasAccess(info));
+    setPro(hasAccess(info));
     const offerings = await Purchases.getOfferings();
     const available = Object.values(offerings.all).flatMap((offering) => offering.availablePackages);
     const weekly = findPackage(available, WEEKLY_PRODUCT_ID);
     const annual = findPackage(available, ANNUAL_PRODUCT_ID);
     const monthly = findPackage(available, MONTHLY_PRODUCT_ID);
     packages.current = { weekly, annual, monthly };
+    const annualProduct = annual?.product ?? null;
+    const weeklyProduct = weekly?.product ?? null;
     setPrices({
-      annualLine: annualLine(annual?.product ?? null),
-      weeklyLine: weeklyLine(weekly?.product ?? null),
+      annualLine: annualProduct ? annualLine(annualProduct) : FALLBACK.annualLine,
+      weeklyLine: weeklyProduct ? weeklyLine(weeklyProduct) : FALLBACK.weeklyLine,
       downsellIntro: monthly?.product.introPrice?.priceString ?? monthly?.product.priceString ?? FALLBACK.downsellIntro,
       downsellRenewal: monthly?.product.priceString ?? FALLBACK.downsellRenewal,
     });
-  }, []);
+  }, [setPro]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -96,19 +105,19 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       Purchases.configure({ apiKey: REVENUECAT_API_KEY });
       configured = true;
     }
-    const listener = (info: CustomerInfo) => setIsPro(hasAccess(info));
+    const listener = (info: CustomerInfo) => setPro(hasAccess(info));
     Purchases.addCustomerInfoUpdateListener(listener);
     refresh().catch(() => {
-      // Keep the App Store fallback prices. The purchase path loads the product again.
+      setPrices(FALLBACK);
     });
     return () => {
       Purchases.removeCustomerInfoUpdateListener(listener);
     };
-  }, [refresh]);
+  }, [refresh, setPro]);
 
   const grant = useCallback((info: CustomerInfo) => {
     const active = hasAccess(info);
-    setIsPro(active);
+    setPro(active);
     if (!active) return;
     setPaywallVisible(false);
     setDownsellVisible(false);
@@ -116,7 +125,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
     const next = pending.current;
     pending.current = null;
     next?.();
-  }, []);
+  }, [setPro]);
 
   const buy = useCallback(async (productId: string, current: PurchasesPackage | null) => {
     if (Platform.OS !== 'ios') {
@@ -138,8 +147,12 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       const result = selected
         ? await Purchases.purchasePackage(selected)
         : await purchaseStoreProduct(productId);
+      const unlocked = hasAccess(result.customerInfo);
+      if (unlocked && productId === ANNUAL_PRODUCT_ID) {
+        await scheduleTrialReminder();
+      }
       grant(result.customerInfo);
-      if (!hasAccess(result.customerInfo)) {
+      if (!unlocked) {
         setLastError('The App Store purchase finished, but access is not active yet. Try Restore Purchases.');
       }
     } catch (error: unknown) {
@@ -150,7 +163,13 @@ export function BillingProvider({ children }: { children: ReactNode }) {
         if (!hasAccess(info)) setLastError('This Apple ID already purchased the plan. Restore did not find an active subscription.');
         return;
       }
-      setLastError(purchaseMessage(error));
+      const message = purchaseMessage(error);
+      if (message == null) {
+        setPrices(FALLBACK);
+        setLastError(null);
+        return;
+      }
+      setLastError(message);
     } finally {
       setLoading(false);
     }
@@ -159,12 +178,13 @@ export function BillingProvider({ children }: { children: ReactNode }) {
   const value = useMemo<BillingContextValue>(() => ({
     ...prices,
     isPro,
+    isProNow: () => isProRef.current,
     loading,
     lastError,
     paywallVisible,
     downsellVisible,
     requestAccess: (onGranted) => {
-      if (isPro) {
+      if (isProRef.current) {
         onGranted();
         return;
       }
@@ -196,7 +216,14 @@ export function BillingProvider({ children }: { children: ReactNode }) {
         if (!hasAccess(info)) setLastError('No active subscription was found for this Apple ID.');
         grant(info);
       } catch (error: unknown) {
-        if (!isCancelled(error)) setLastError(purchaseMessage(error));
+        if (isCancelled(error)) return;
+        const message = purchaseMessage(error);
+        if (message == null) {
+          setPrices(FALLBACK);
+          setLastError(null);
+          return;
+        }
+        setLastError(message);
       } finally {
         setLoading(false);
       }
@@ -267,7 +294,21 @@ function isCode(error: unknown, code: PURCHASES_ERROR_CODE): boolean {
   return typeof error === 'object' && error != null && 'code' in error && (error as { code?: string }).code === code;
 }
 
-function purchaseMessage(error: unknown): string {
+function isConfigurationProblem(error: unknown): boolean {
+  if (isCode(error, PURCHASES_ERROR_CODE.CONFIGURATION_ERROR)) return true;
+  if (isCode(error, PURCHASES_ERROR_CODE.INVALID_CREDENTIALS_ERROR)) return true;
+  const message = error instanceof Error ? error.message : '';
+  return /configuration|rev\.cat|revenuecat|none of the products registered|offerings-empty/i.test(message);
+}
+
+export function visibleBillingError(message: string | null): string | null {
+  if (!message) return null;
+  if (/configuration|rev\.cat|revenuecat|none of the products registered|offerings-empty/i.test(message)) return null;
+  return message;
+}
+
+function purchaseMessage(error: unknown): string | null {
+  if (isConfigurationProblem(error)) return null;
   if (isCode(error, PURCHASES_ERROR_CODE.NETWORK_ERROR) || isCode(error, PURCHASES_ERROR_CODE.OFFLINE_CONNECTION_ERROR)) {
     return 'The App Store could not be reached. Check your connection and try again.';
   }
@@ -283,5 +324,6 @@ function purchaseMessage(error: unknown): string {
   if (isCode(error, PURCHASES_ERROR_CODE.STORE_PROBLEM_ERROR)) {
     return 'The App Store could not complete the payment. Please try again.';
   }
-  return error instanceof Error ? error.message : 'The purchase could not be completed.';
+  if (error instanceof Error && error.message && error.message.length <= 160) return error.message;
+  return 'The purchase could not be completed.';
 }

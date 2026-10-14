@@ -67,6 +67,29 @@ export const LOCALES: readonly LocaleProfile[] = [
   },
 ];
 
+const EURO_AREA = new Set([
+  'AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR',
+  'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK',
+]);
+
+export function currencyForRegion(regionCode: string | null | undefined): CurrencyCode {
+  const region = regionCode?.toUpperCase();
+  switch (region) {
+    case 'ZA':
+      return 'ZAR';
+    case 'US':
+      return 'USD';
+    case 'GB':
+      return 'GBP';
+    case 'AU':
+      return 'AUD';
+    case 'CA':
+      return 'CAD';
+    default:
+      return region && EURO_AREA.has(region) ? 'EUR' : 'ZAR';
+  }
+}
+
 export function isCurrencyCode(value: string): value is CurrencyCode {
   return LOCALES.some((locale) => locale.code === value);
 }

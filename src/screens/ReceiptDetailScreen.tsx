@@ -127,7 +127,7 @@ export function ReceiptDetailScreen() {
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatMoney(total, locale)}</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.amountChips}>
             {draft.moneyCandidates.map((value) => {
               const selected = value === total;
               return (
@@ -142,10 +142,10 @@ export function ReceiptDetailScreen() {
         <View style={styles.card}>
           <View style={styles.toggle}>
             <Pressable onPress={() => setDeductible(true)} style={[styles.toggleItem, deductible && styles.toggleOn]}>
-              <Text style={[styles.toggleText, deductible && styles.toggleTextOn]}>100% Tax Deductible</Text>
+              <Text numberOfLines={1} style={[styles.toggleText, deductible && styles.toggleTextOn]}>Business</Text>
             </Pressable>
             <Pressable onPress={() => setDeductible(false)} style={[styles.toggleItem, !deductible && styles.toggleOn]}>
-              <Text style={[styles.toggleText, !deductible && styles.toggleTextOn]}>Personal</Text>
+              <Text numberOfLines={1} style={[styles.toggleText, !deductible && styles.toggleTextOn]}>Personal</Text>
             </Pressable>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
@@ -194,16 +194,17 @@ const styles = StyleSheet.create({
   taxInput: { minWidth: 72, textAlign: 'right', color: colors.textPrimary, fontWeight: '700', padding: 0 },
   totalLabel: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
   totalValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
-  chips: { gap: 8, paddingTop: 16 },
+  chips: { gap: 8, paddingTop: 16, paddingHorizontal: 4 },
+  amountChips: { gap: 8, paddingTop: 16, paddingHorizontal: 12, paddingBottom: 4 },
   chip: { backgroundColor: colors.bgSubtle, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   chipOn: { backgroundColor: colors.btnPrimaryBg },
   chipText: { color: colors.textPrimary, fontWeight: '700' },
   chipTextOn: { color: '#FFFFFF' },
   card: { backgroundColor: colors.bgCard, borderRadius: 28, padding: 20, borderWidth: 1, borderColor: colors.borderLight, gap: 14 },
-  toggle: { flexDirection: 'row', backgroundColor: colors.bgSubtle, borderRadius: 999, padding: 4 },
-  toggleItem: { flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
-  toggleOn: { backgroundColor: colors.bgCard },
-  toggleText: { color: colors.textSecondary, fontWeight: '700', fontSize: 13 },
+  toggle: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F4F7', borderRadius: 999, padding: 4, height: 48 },
+  toggleItem: { flex: 1, height: 40, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  toggleOn: { backgroundColor: '#FFFFFF' },
+  toggleText: { color: colors.textSecondary, fontWeight: '700', fontSize: 15 },
   toggleTextOn: { color: colors.textPrimary },
   error: { color: colors.destructive, textAlign: 'center' },
   save: { height: 58, borderRadius: 999, backgroundColor: colors.btnPrimaryBg, alignItems: 'center', justifyContent: 'center' },

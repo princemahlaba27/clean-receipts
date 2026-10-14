@@ -1,6 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { useBilling } from '../services/purchases';
+import { useBilling, visibleBillingError } from '../services/purchases';
 import { colors } from '../theme/tokens';
 
 export function DownsellModal() {
@@ -12,7 +12,7 @@ export function DownsellModal() {
           <Text style={styles.kicker}>One-time offer</Text>
           <Text style={styles.title}>{billing.downsellIntro} for your first month</Text>
           <Text style={styles.body}>Then {billing.downsellRenewal}/month. Keep unlimited scans, PDF reports, and CSV exports.</Text>
-          {billing.lastError ? <Text style={styles.error}>{billing.lastError}</Text> : null}
+          {visibleBillingError(billing.lastError) ? <Text style={styles.error}>{visibleBillingError(billing.lastError)}</Text> : null}
           <Pressable disabled={billing.loading} onPress={() => { void billing.purchaseMonthly(); }} style={styles.cta}>
             <Text style={styles.ctaText}>{billing.loading ? 'Working…' : `Start for ${billing.downsellIntro}`}</Text>
           </Pressable>

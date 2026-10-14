@@ -35,7 +35,9 @@
         {
           "cameraPermission": "Tax Receipts uses the camera to scan receipts. Images stay on this device."
         }
-      ]
+      ],
+      "expo-localization",
+      "expo-notifications"
     ],
     "extra": {
       "eas": {

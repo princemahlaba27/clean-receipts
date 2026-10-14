@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PRIVACY_URL, TERMS_URL } from '../config';
-import { useBilling } from '../services/purchases';
+import { useBilling, visibleBillingError } from '../services/purchases';
 import { colors } from '../theme/tokens';
 
 const STEPS = [
@@ -15,11 +15,13 @@ const STEPS = [
 
 export function PaywallModal() {
   const billing = useBilling();
+  const insets = useSafeAreaInsets();
   const [annual, setAnnual] = useState(true);
+  const failure = visibleBillingError(billing.lastError);
   return (
     <Modal animationType="slide" visible={billing.paywallVisible} onRequestClose={billing.closePaywall}>
-      <SafeAreaView style={styles.screen}>
-          <View style={styles.top}>
+      <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
+          <View style={[styles.top, { paddingTop: insets.top + 10 }]}>
             <Pressable accessibilityLabel="Close" onPress={billing.closePaywall}><Text style={styles.close}>✕</Text></Pressable>
             <Pressable onPress={() => { void billing.restore(); }}><Text style={styles.restore}>Restore</Text></Pressable>
           </View>
@@ -45,7 +47,7 @@ export function PaywallModal() {
               <Text style={styles.planTitle}>Weekly</Text>
               <Text style={styles.planBody}>{billing.weeklyLine}</Text>
             </Pressable>
-            {billing.lastError ? <Text style={styles.error}>{billing.lastError}</Text> : null}
+            {failure ? <Text style={styles.error}>{failure}</Text> : null}
           </ScrollView>
           <View style={styles.footer}>
             <Pressable
@@ -63,7 +65,7 @@ export function PaywallModal() {
               <Text onPress={() => { void Linking.openURL(PRIVACY_URL); }}>Privacy Policy</Text>
             </Text>
           </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -72,8 +74,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgCanvas, justifyContent: 'space-between' },
   content: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 12 },
   footer: { paddingHorizontal: 20, paddingBottom: 12 },
-  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8 },
-  close: { fontSize: 20, color: colors.textPrimary, fontWeight: '700' },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8 },
+  close: { fontSize: 20, color: 'rgba(102, 112, 133, 0.35)', fontWeight: '700' },
   restore: { color: colors.accentBlue, fontWeight: '700' },
   title: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginBottom: 18 },
   step: { flexDirection: 'row', gap: 12, marginBottom: 16 },
