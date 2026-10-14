@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PRIVACY_URL, TERMS_URL } from '../config';
 import { useBilling } from '../services/purchases';
@@ -17,14 +18,13 @@ export function PaywallModal() {
   const [annual, setAnnual] = useState(true);
   if (!billing.paywallVisible) return null;
   return (
-    <Modal animationType="slide" transparent visible onRequestClose={billing.closePaywall}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+    <Modal animationType="slide" visible onRequestClose={billing.closePaywall}>
+      <SafeAreaView style={styles.screen}>
           <View style={styles.top}>
             <Pressable accessibilityLabel="Close" onPress={billing.closePaywall}><Text style={styles.close}>✕</Text></Pressable>
             <Pressable onPress={() => { void billing.restore(); }}><Text style={styles.restore}>Restore</Text></Pressable>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.title}>How your free trial works</Text>
             {STEPS.map((step) => (
               <View key={step.title} style={styles.step}>
@@ -47,6 +47,8 @@ export function PaywallModal() {
               <Text style={styles.planBody}>{billing.weeklyIntro} for 7 days, then {billing.weeklyRenewal}/week</Text>
             </Pressable>
             {billing.lastError ? <Text style={styles.error}>{billing.lastError}</Text> : null}
+          </ScrollView>
+          <View style={styles.footer}>
             <Pressable
               disabled={billing.loading}
               onPress={() => { void (annual ? billing.purchaseAnnual() : billing.purchaseWeekly()); }}
@@ -61,17 +63,17 @@ export function PaywallModal() {
               {'  •  '}
               <Text onPress={() => { void Linking.openURL(PRIVACY_URL); }}>Privacy Policy</Text>
             </Text>
-          </ScrollView>
-        </View>
-      </View>
+          </View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(16,24,40,0.35)', justifyContent: 'flex-end' },
-  sheet: { maxHeight: '92%', backgroundColor: colors.bgCanvas, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20 },
-  top: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  screen: { flex: 1, backgroundColor: colors.bgCanvas, justifyContent: 'space-between' },
+  content: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 12 },
+  footer: { paddingHorizontal: 20, paddingBottom: 12 },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8 },
   close: { fontSize: 20, color: colors.textPrimary, fontWeight: '700' },
   restore: { color: colors.accentBlue, fontWeight: '700' },
   title: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginBottom: 18 },

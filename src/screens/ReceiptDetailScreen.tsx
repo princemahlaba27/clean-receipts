@@ -30,6 +30,7 @@ export function ReceiptDetailScreen() {
   const [merchant, setMerchant] = useState(draft.merchant);
   const [category, setCategory] = useState<Category>(draft.category);
   const [tax, setTax] = useState(draft.tax);
+  const [taxText, setTaxText] = useState(draft.tax.toFixed(2));
   const [total, setTotal] = useState(draft.total);
   const [deductible, setDeductible] = useState(draft.deductible);
   const [items, setItems] = useState<LineItem[]>(draft.lineItems);
@@ -109,12 +110,18 @@ export function ReceiptDetailScreen() {
           <View style={styles.totalRow}><Text style={styles.muted}>Subtotal</Text><Text style={styles.muted}>{formatMoney(subtotal, locale)}</Text></View>
           <View style={styles.totalRow}>
             <Text style={styles.muted}>{locale.taxName}</Text>
-            <TextInput
-              keyboardType="decimal-pad"
-              value={String(tax)}
-              onChangeText={(text) => setTax(parseMoney(text) ?? 0)}
-              style={styles.taxInput}
-            />
+            <View style={styles.taxField}>
+              <Text style={styles.itemPrice}>{locale.symbol}</Text>
+              <TextInput
+                keyboardType="decimal-pad"
+                value={taxText}
+                onChangeText={(text) => {
+                  setTaxText(text);
+                  setTax(parseMoney(text) ?? 0);
+                }}
+                style={styles.taxInput}
+              />
+            </View>
           </View>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
@@ -153,21 +160,24 @@ export function ReceiptDetailScreen() {
           </ScrollView>
         </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
+      </ScrollView>
+      <View style={styles.footer}>
         <Pressable disabled={saving} onPress={() => { void save(); }} style={styles.save}>
           <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save to Tax Vault'}</Text>
         </Pressable>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bgCanvas },
+  screen: { flex: 1, backgroundColor: colors.bgCanvas, justifyContent: 'space-between' },
   nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8 },
   navButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.borderLight },
   navGlyph: { fontWeight: '700', color: colors.textPrimary },
   navTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
-  content: { padding: 16, paddingBottom: 32, gap: 16 },
+  content: { flexGrow: 1, padding: 16, paddingBottom: 16, gap: 16, justifyContent: 'space-between' },
+  footer: { paddingHorizontal: 16, paddingBottom: 16 },
   paper: { backgroundColor: colors.bgCard, borderRadius: 28, padding: 24, borderWidth: 1, borderColor: colors.borderLight, ...cardShadow },
   merchant: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
   scanned: { textAlign: 'center', color: colors.textSecondary, fontSize: 13, marginBottom: 16 },
@@ -180,7 +190,8 @@ const styles = StyleSheet.create({
   itemPrice: { fontWeight: '700', color: colors.textPrimary },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
   muted: { color: colors.textSecondary },
-  taxInput: { minWidth: 90, textAlign: 'right', color: colors.textPrimary, fontWeight: '700' },
+  taxField: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  taxInput: { minWidth: 72, textAlign: 'right', color: colors.textPrimary, fontWeight: '700', padding: 0 },
   totalLabel: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
   totalValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
   chips: { gap: 8, paddingTop: 16 },

@@ -81,7 +81,7 @@ export function VaultScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.headerCopy}>
@@ -124,12 +124,14 @@ export function VaultScreen() {
         </View>
         {message ? <Text style={styles.message}>{message}</Text> : null}
         {filtered.length === 0 ? (
+          <View style={styles.emptyWrap}>
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>🧾</Text>
             <Text style={styles.emptyTitle}>No receipts saved yet</Text>
             <Pressable onPress={() => { void beginScan(); }} style={styles.emptyButton}>
               <Text style={styles.emptyButtonText}>📸 Scan a Receipt</Text>
             </Pressable>
+          </View>
           </View>
         ) : (
           filtered.map((receipt) => (
@@ -202,7 +204,7 @@ function Circle({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgCanvas },
-  content: { padding: 20, paddingBottom: 120, gap: 14 },
+  content: { flexGrow: 1, padding: 20, paddingBottom: 16, gap: 14 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   headerCopy: { flex: 1 },
   hello: { fontSize: 24, fontWeight: '800', color: colors.textPrimary },
@@ -228,6 +230,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
   link: { color: colors.accentBlue, fontWeight: '700' },
   message: { color: colors.destructive },
+  emptyWrap: { flexGrow: 1, justifyContent: 'center' },
   empty: { backgroundColor: colors.bgCard, borderRadius: 28, borderWidth: 1, borderColor: colors.borderLight, padding: 28, alignItems: 'center', ...cardShadow },
   emptyEmoji: { fontSize: 42 },
   emptyTitle: { marginTop: 8, fontSize: 18, fontWeight: '700', color: colors.textPrimary },
@@ -240,13 +243,13 @@ const styles = StyleSheet.create({
   merchant: { fontWeight: '700', color: colors.textPrimary, fontSize: 16 },
   meta: { color: colors.textSecondary, marginTop: 2, fontSize: 13 },
   amount: { fontWeight: '800', color: colors.textPrimary },
-  dock: { position: 'absolute', left: 16, right: 16, bottom: 18, flexDirection: 'row', gap: 10, backgroundColor: colors.bgCard, borderRadius: 999, padding: 8, borderWidth: 1, borderColor: colors.borderLight, ...cardShadow },
+  dock: { marginHorizontal: 16, marginBottom: 8, flexDirection: 'row', gap: 10, backgroundColor: colors.bgCard, borderRadius: 999, padding: 8, borderWidth: 1, borderColor: colors.borderLight, ...cardShadow },
   dockPrimary: { flex: 1.2, height: 52, borderRadius: 999, backgroundColor: colors.btnPrimaryBg, alignItems: 'center', justifyContent: 'center' },
   dockPrimaryText: { color: '#FFFFFF', fontWeight: '800' },
   dockSecondary: { flex: 1, height: 52, borderRadius: 999, backgroundColor: colors.bgSubtle, alignItems: 'center', justifyContent: 'center' },
   dockSecondaryText: { color: colors.textPrimary, fontWeight: '700' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(16,24,40,0.35)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.bgCard, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, gap: 8 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(16,24,40,0.35)', justifyContent: 'center', padding: 20 },
+  sheet: { backgroundColor: colors.bgCard, borderRadius: 28, borderWidth: 1, borderColor: colors.borderLight, padding: 20, gap: 8 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
   sheetRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
   sheetRowText: { color: colors.textPrimary, fontSize: 16 },

@@ -126,8 +126,8 @@ function renderCsv(receipts: StoredReceipt[], locale: LocaleProfile): string {
         receipt.date,
         csv(receipt.merchant),
         csv(receipt.category),
-        formatMoney(receipt.tax, locale),
-        formatMoney(receipt.total, locale),
+        csv(formatMoney(receipt.tax, locale)),
+        csv(formatMoney(receipt.total, locale)),
         locale.code,
       ].join(','),
     );

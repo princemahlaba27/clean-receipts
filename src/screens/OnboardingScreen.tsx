@@ -84,7 +84,10 @@ export function OnboardingScreen() {
           <View key={index} style={[styles.segment, index <= step && styles.segmentOn]} />
         ))}
       </View>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.content, (step === 1 || step === 5) && styles.centered]}
+        showsVerticalScrollIndicator={false}
+      >
         {step === 0 ? (
           <Step
             title="Where do you file your taxes?"
@@ -267,7 +270,8 @@ const styles = StyleSheet.create({
   progress: { flexDirection: 'row', gap: 6, paddingHorizontal: 20, paddingTop: 8 },
   segment: { flex: 1, height: 4, borderRadius: 99, backgroundColor: colors.borderLight },
   segmentOn: { backgroundColor: colors.btnPrimaryBg },
-  content: { padding: 20, paddingBottom: 24 },
+  content: { flexGrow: 1, padding: 20, paddingBottom: 24, justifyContent: 'flex-start' },
+  centered: { justifyContent: 'center' },
   title: { fontSize: 30, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.6 },
   subtitle: { marginTop: 8, fontSize: 16, color: colors.textSecondary },
   blue: { color: colors.accentBlue },
