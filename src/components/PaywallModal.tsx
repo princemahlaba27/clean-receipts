@@ -3,178 +3,93 @@ import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'r
 
 import { PRIVACY_URL, TERMS_URL } from '../config';
 import { useBilling } from '../services/purchases';
-import { colors, radius } from '../theme/tokens';
-import { YellowButton } from '../theme/ui';
+import { colors } from '../theme/tokens';
 
-type Plan = 'weekly' | 'annual';
-
-const TIMELINE = [
-  { title: 'Today', body: 'Instant access' },
-  { title: 'Day 3', body: 'Reminder notification' },
-  { title: 'Day 5', body: 'First charge' },
+const STEPS = [
+  { icon: '✓', title: 'Set up Tax Receipts', body: 'You configured your local currency & tax categories', done: true },
+  { icon: '🔓', title: 'Today: Get Full Access', body: 'Unlimited receipt scans, PDF audit reports & Excel/CSV exports', done: false },
+  { icon: '🔔', title: 'Day 2: Trial Reminder', body: 'Reminder before your trial ends. Zero surprises.', done: false },
+  { icon: '⭐', title: 'Day 3: Trial Ends', body: 'Cancel anytime in 1 tap in iPhone Settings.', done: false },
 ];
 
 export function PaywallModal() {
   const billing = useBilling();
-  const [plan, setPlan] = useState<Plan>('weekly');
-  const cta = plan === 'weekly'
-    ? `Start 7-Day Access for ${billing.weeklyIntro}`
-    : 'Start 3-Day Free Trial';
-  const disclosure = plan === 'weekly'
-    ? `${billing.weeklyIntro} for the first 7 days, then ${billing.weeklyRenewal} per week. Subscription automatically renews until canceled. Cancel anytime in Settings > Apple ID > Subscriptions.`
-    : `3-day free trial, then ${billing.annual} per year. Subscription automatically renews until canceled. Cancel anytime in Settings > Apple ID > Subscriptions.`;
-
+  const [annual, setAnnual] = useState(true);
+  if (!billing.paywallVisible) return null;
   return (
-    <Modal animationType="slide" visible={billing.paywallVisible} onRequestClose={billing.closePaywall}>
-      <View style={styles.screen}>
-        <View style={styles.toolbar}>
-          <Pressable accessibilityLabel="Close" onPress={billing.closePaywall} style={styles.close}>
-            <Text style={styles.closeLabel}>✕</Text>
-          </Pressable>
-        </View>
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.badge}>TAX COMPLIANCE & EXPORT ENGINE</Text>
-          <Text style={styles.title}>Export Audit-Ready Reports</Text>
-          <Benefit text="Audit-ready PDF ledger with receipt images" />
-          <Benefit text="CSV export for spreadsheets" />
-          <Benefit text="On-device storage, included in your iPhone backup" />
-          <PlanCard
-            title="Weekly"
-            price={`${billing.weeklyIntro} for 7 days`}
-            detail={`then ${billing.weeklyRenewal}/week`}
-            selected={plan === 'weekly'}
-            onPress={() => setPlan('weekly')}
-          />
-          <PlanCard
-            title="Annual"
-            price={`${billing.annual} / year`}
-            detail="3-day free trial · Save 89% · $3.33/mo"
-            selected={plan === 'annual'}
-            onPress={() => setPlan('annual')}
-          />
-          {plan === 'annual' ? <Timeline /> : null}
-          <YellowButton
-            disabled={billing.loading}
-            label={billing.loading ? 'Working…' : cta}
-            onPress={() => { void (plan === 'weekly' ? billing.purchaseWeekly() : billing.purchaseAnnual()); }}
-          />
-          <Text style={styles.fine}>{disclosure}</Text>
-          {billing.lastError ? <Text style={styles.error}>{billing.lastError}</Text> : null}
-          <Pressable onPress={() => { void billing.restore(); }}>
-            <Text style={styles.restore}>Restore Purchases</Text>
-          </Pressable>
-          <View style={styles.links}>
-            <Text style={styles.link} onPress={() => { void Linking.openURL(TERMS_URL); }}>Terms of Use (EULA)</Text>
-            <Text style={styles.link} onPress={() => { void Linking.openURL(PRIVACY_URL); }}>Privacy Policy</Text>
+    <Modal animationType="slide" transparent visible onRequestClose={billing.closePaywall}>
+      <View style={styles.backdrop}>
+        <View style={styles.sheet}>
+          <View style={styles.top}>
+            <Pressable accessibilityLabel="Close" onPress={billing.closePaywall}><Text style={styles.close}>✕</Text></Pressable>
+            <Pressable onPress={() => { void billing.restore(); }}><Text style={styles.restore}>Restore</Text></Pressable>
           </View>
-        </ScrollView>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={styles.title}>How your free trial works</Text>
+            {STEPS.map((step) => (
+              <View key={step.title} style={styles.step}>
+                <View style={[styles.icon, step.done && styles.iconDone]}><Text>{step.icon}</Text></View>
+                <View style={styles.stepCopy}>
+                  <Text style={[styles.stepTitle, step.done && styles.stepDone]}>{step.title}</Text>
+                  <Text style={styles.stepBody}>{step.body}</Text>
+                </View>
+              </View>
+            ))}
+            <Pressable onPress={() => setAnnual(true)} style={[styles.plan, annual && styles.planOn]}>
+              <View style={styles.planRow}>
+                <Text style={styles.planTitle}>Annual</Text>
+                <Text style={styles.badge}>SAVE 89%</Text>
+              </View>
+              <Text style={styles.planBody}>3-day free trial, then {billing.annual}/year ($3.33/mo)</Text>
+            </Pressable>
+            <Pressable onPress={() => setAnnual(false)} style={[styles.plan, !annual && styles.planOn]}>
+              <Text style={styles.planTitle}>Weekly</Text>
+              <Text style={styles.planBody}>{billing.weeklyIntro} for 7 days, then {billing.weeklyRenewal}/week</Text>
+            </Pressable>
+            {billing.lastError ? <Text style={styles.error}>{billing.lastError}</Text> : null}
+            <Pressable
+              disabled={billing.loading}
+              onPress={() => { void (annual ? billing.purchaseAnnual() : billing.purchaseWeekly()); }}
+              style={styles.cta}
+            >
+              <Text style={styles.ctaText}>{billing.loading ? 'Working…' : 'Start My Free Trial'}</Text>
+            </Pressable>
+            <Text style={styles.legal}>
+              <Text onPress={() => { void billing.restore(); }}>Restore Purchases</Text>
+              {'  •  '}
+              <Text onPress={() => { void Linking.openURL(TERMS_URL); }}>Terms of Use (EULA)</Text>
+              {'  •  '}
+              <Text onPress={() => { void Linking.openURL(PRIVACY_URL); }}>Privacy Policy</Text>
+            </Text>
+          </ScrollView>
+        </View>
       </View>
     </Modal>
   );
 }
 
-function Timeline() {
-  return (
-    <View style={styles.timeline}>
-      {TIMELINE.map((step, index) => (
-        <View key={step.title} style={styles.step}>
-          <View style={styles.rail}>
-            <View style={styles.dot} />
-            {index < TIMELINE.length - 1 ? <View style={styles.line} /> : null}
-          </View>
-          <View style={styles.stepCopy}>
-            <Text style={styles.stepTitle}>{step.title}</Text>
-            <Text style={styles.stepBody}>{step.body}</Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function Benefit({ text }: { text: string }) {
-  return (
-    <View style={styles.benefit}>
-      <View style={styles.benefitDot} />
-      <Text style={styles.benefitText}>{text}</Text>
-    </View>
-  );
-}
-
-function PlanCard({
-  title,
-  price,
-  detail,
-  selected,
-  onPress,
-}: {
-  title: string;
-  price: string;
-  detail: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} style={[styles.plan, selected && styles.planSelected]}>
-      <View style={styles.planCopy}>
-        <Text style={styles.planTitle}>{title}</Text>
-        <Text style={styles.planPrice}>{price}</Text>
-        <Text style={styles.planDetail}>{detail}</Text>
-      </View>
-      <Text style={[styles.check, !selected && styles.checkIdle]}>{selected ? '✓' : '○'}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.obsidian, flex: 1 },
-  toolbar: { alignItems: 'flex-start', paddingHorizontal: 16, paddingTop: 56 },
-  close: { padding: 8 },
-  closeLabel: { color: colors.slate, fontSize: 18, fontWeight: '700' },
-  content: { padding: 24, paddingBottom: 48 },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.yellow,
-    borderRadius: 999,
-    color: colors.obsidian,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  title: { color: colors.white, fontSize: 34, fontWeight: '700', marginVertical: 14 },
-  benefit: { flexDirection: 'row', gap: 10, marginBottom: 8 },
-  benefitDot: { backgroundColor: colors.yellow, borderRadius: 4, height: 8, marginTop: 6, width: 8 },
-  benefitText: { color: colors.white, flex: 1, fontSize: 15 },
-  plan: {
-    backgroundColor: colors.glass,
-    borderColor: colors.hairline,
-    borderRadius: radius,
-    borderWidth: 1,
-    flexDirection: 'row',
-    marginTop: 10,
-    padding: 16,
-  },
-  planSelected: { borderColor: colors.yellow, borderWidth: 1.5 },
-  planCopy: { flex: 1 },
-  planTitle: { color: colors.white, fontSize: 17, fontWeight: '700' },
-  planPrice: { color: colors.yellow, fontSize: 15, fontWeight: '600', marginTop: 4 },
-  planDetail: { color: colors.slate, fontSize: 12, marginTop: 4 },
-  check: { color: colors.yellow, fontSize: 22 },
-  checkIdle: { color: colors.slate },
-  timeline: { marginVertical: 16 },
-  step: { flexDirection: 'row' },
-  rail: { alignItems: 'center', width: 20 },
-  dot: { backgroundColor: colors.emerald, borderRadius: 5, height: 10, width: 10 },
-  line: { backgroundColor: colors.hairline, flex: 1, width: 1 },
-  stepCopy: { flex: 1, paddingBottom: 14, paddingLeft: 10 },
-  stepTitle: { color: colors.white, fontWeight: '700' },
-  stepBody: { color: colors.slate, marginTop: 2 },
-  fine: { color: colors.slate, fontSize: 12, lineHeight: 18, marginTop: 12 },
-  error: { color: colors.danger, marginTop: 8 },
-  restore: { color: colors.yellow, fontWeight: '700', marginTop: 18, textAlign: 'center' },
-  links: { flexDirection: 'row', gap: 16, justifyContent: 'center', marginTop: 12 },
-  link: { color: colors.slate, fontSize: 13 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(16,24,40,0.35)', justifyContent: 'flex-end' },
+  sheet: { maxHeight: '92%', backgroundColor: colors.bgCanvas, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20 },
+  top: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  close: { fontSize: 20, color: colors.textPrimary, fontWeight: '700' },
+  restore: { color: colors.accentBlue, fontWeight: '700' },
+  title: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginBottom: 18 },
+  step: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  icon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.bgSubtle, alignItems: 'center', justifyContent: 'center' },
+  iconDone: { backgroundColor: colors.accentEmeraldBg },
+  stepCopy: { flex: 1 },
+  stepTitle: { fontWeight: '800', color: colors.textPrimary, fontSize: 16 },
+  stepDone: { color: colors.accentEmerald, textDecorationLine: 'line-through' },
+  stepBody: { color: colors.textSecondary, marginTop: 2 },
+  plan: { backgroundColor: colors.bgCard, borderRadius: 16, borderWidth: 1, borderColor: colors.borderLight, padding: 14, marginBottom: 10 },
+  planOn: { borderWidth: 2, borderColor: colors.btnPrimaryBg },
+  planRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  planTitle: { fontWeight: '800', color: colors.textPrimary, fontSize: 16 },
+  planBody: { color: colors.textSecondary, marginTop: 4 },
+  badge: { backgroundColor: colors.accentEmeraldBg, color: colors.accentEmerald, overflow: 'hidden', fontWeight: '800', fontSize: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  error: { color: colors.destructive, marginBottom: 8 },
+  cta: { height: 58, borderRadius: 999, backgroundColor: colors.btnPrimaryBg, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  ctaText: { color: '#FFFFFF', fontWeight: '800', fontSize: 17 },
+  legal: { textAlign: 'center', color: colors.textSecondary, marginTop: 14, marginBottom: 12, lineHeight: 20 },
 });

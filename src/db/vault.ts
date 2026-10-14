@@ -14,6 +14,7 @@ type ReceiptRow = {
   total: number;
   reference: string;
   image_path: string;
+  deductible: number;
   created_at: number;
 };
 
@@ -22,6 +23,7 @@ type LineRow = {
   receipt_id: string;
   label: string;
   amount: number;
+  qty: number | null;
 };
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -48,9 +50,16 @@ export function database(): Promise<SQLite.SQLiteDatabase> {
           receipt_id TEXT NOT NULL,
           label TEXT NOT NULL,
           amount REAL NOT NULL,
+          qty REAL NOT NULL DEFAULT 1,
           FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS settings (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+        );
       `);
+      await addColumn(db, 'receipts', 'deductible', 'INTEGER NOT NULL DEFAULT 1');
+      await addColumn(db, 'line_items', 'qty', 'REAL NOT NULL DEFAULT 1');
       return db;
     });
   }
@@ -70,7 +79,7 @@ export async function listReceipts(): Promise<StoredReceipt[]> {
   const grouped = new Map<string, LineItem[]>();
   for (const line of lines) {
     const bucket = grouped.get(line.receipt_id) ?? [];
-    bucket.push({ id: line.id, label: line.label, amount: line.amount });
+    bucket.push({ id: line.id, label: line.label, amount: line.amount, qty: line.qty ?? 1 });
     grouped.set(line.receipt_id, bucket);
   }
   return receipts.map((row) => ({
@@ -83,6 +92,7 @@ export async function listReceipts(): Promise<StoredReceipt[]> {
     total: row.total,
     reference: row.reference,
     imagePath: row.image_path,
+    deductible: row.deductible !== 0,
     createdAt: row.created_at,
     lineItems: grouped.get(row.id) ?? [],
   }));
@@ -97,6 +107,7 @@ export async function insertReceipt(input: {
   total: number;
   reference: string;
   imagePath: string;
+  deductible: boolean;
   lineItems: LineItem[];
 }): Promise<string> {
   const db = await database();
@@ -104,14 +115,14 @@ export async function insertReceipt(input: {
   const createdAt = Date.now();
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `INSERT INTO receipts (id, merchant, date, category, subtotal, tax, total, reference, image_path, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, input.merchant, input.date, input.category, input.subtotal, input.tax, input.total, input.reference, input.imagePath, createdAt],
+      `INSERT INTO receipts (id, merchant, date, category, subtotal, tax, total, reference, image_path, deductible, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.merchant, input.date, input.category, input.subtotal, input.tax, input.total, input.reference, input.imagePath, input.deductible ? 1 : 0, createdAt],
     );
     for (const item of input.lineItems) {
       await db.runAsync(
-        'INSERT INTO line_items (id, receipt_id, label, amount) VALUES (?, ?, ?, ?)',
-        [item.id || createId(), id, item.label, item.amount],
+        'INSERT INTO line_items (id, receipt_id, label, amount, qty) VALUES (?, ?, ?, ?, ?)',
+        [item.id || createId(), id, item.label, item.amount, item.qty || 1],
       );
     }
   });
@@ -120,4 +131,21 @@ export async function insertReceipt(input: {
 
 function categoryOrOther(value: string): Category {
   return isCategory(value) ? value : 'Other';
+}
+
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await database();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const db = await database();
+  await db.runAsync('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, value]);
+}
+
+async function addColumn(db: SQLite.SQLiteDatabase, table: string, column: string, definition: string): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (columns.some((item) => item.name === column)) return;
+  await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }

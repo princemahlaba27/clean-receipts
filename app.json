@@ -4,7 +4,7 @@
     "slug": "tax-receipts",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "scheme": "cleanreceipts",
     "ios": {
       "bundleIdentifier": "com.cleanreceipts.app",

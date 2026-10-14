@@ -1,19 +1,19 @@
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, radius } from './tokens';
+import { cardShadow, colors, radius } from './tokens';
 
 export function GlassCard({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-export function YellowButton({
-  label,
+export function PrimaryButton({
+  title,
   onPress,
   disabled,
 }: {
-  label: string;
-  onPress: PressableProps['onPress'];
+  title: string;
+  onPress: () => void;
   disabled?: boolean;
 }) {
   return (
@@ -21,32 +21,32 @@ export function YellowButton({
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { backgroundColor: pressed ? colors.yellowPressed : colors.yellow, opacity: disabled ? 0.45 : 1 },
-      ]}
+      style={({ pressed }) => [styles.button, disabled && styles.disabled, pressed && !disabled && styles.pressed]}
     >
-      <Text style={styles.buttonLabel}>{label}</Text>
+      <Text style={styles.label}>{title}</Text>
     </Pressable>
   );
 }
 
+export const YellowButton = PrimaryButton;
+
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.glass,
-    borderColor: colors.hairline,
+    backgroundColor: colors.bgCard,
     borderRadius: radius,
     borderWidth: 1,
+    borderColor: colors.borderLight,
+    ...cardShadow,
   },
   button: {
-    alignItems: 'center',
+    minHeight: 58,
     borderRadius: 999,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
+    backgroundColor: colors.btnPrimaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
   },
-  buttonLabel: {
-    color: colors.black,
-    fontSize: 17,
-    fontWeight: '700',
-  },
+  disabled: { opacity: 0.45 },
+  pressed: { opacity: 0.86 },
+  label: { color: colors.btnPrimaryText, fontSize: 17, fontWeight: '700' },
 });

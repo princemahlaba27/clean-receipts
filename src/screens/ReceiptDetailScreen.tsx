@@ -1,54 +1,45 @@
 import { useState } from 'react';
-import {
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FREE_RECEIPT_LIMIT } from '../config';
 import { countReceipts, insertReceipt } from '../db/vault';
-import { formatIsoDate, formatPlainMoney } from '../format';
+import { formatIsoDate, formatMoney } from '../format';
 import { persistImage } from '../services/files';
 import { useBilling } from '../services/purchases';
 import { createId } from '../services/ids';
-import { CATEGORIES, type Category, type RootStackParamList } from '../types';
-import { colors, fonts, radius } from '../theme/tokens';
-import { GlassCard, YellowButton } from '../theme/ui';
+import { parseMoney } from '../services/receiptParser';
+import { useCurrency } from '../services/CurrencyContext';
+import { CATEGORIES, type Category, type LineItem, type RootStackParamList } from '../types';
+import { CATEGORY_EMOJI } from '../services/receiptParser';
+import { cardShadow, colors } from '../theme/tokens';
 
 type Route = RouteProp<RootStackParamList, 'ReceiptDetail'>;
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ReceiptDetail'>;
-type ActiveField = 'subtotal' | 'tax' | 'total' | 'date';
+
+const PILL_CATEGORIES = CATEGORIES.filter((category) => category !== 'Other');
 
 export function ReceiptDetailScreen() {
   const route = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const billing = useBilling();
+  const { locale } = useCurrency();
   const draft = route.params.draft;
   const [merchant, setMerchant] = useState(draft.merchant);
-  const [date, setDate] = useState(draft.date);
   const [category, setCategory] = useState<Category>(draft.category);
-  const [subtotal, setSubtotal] = useState(draft.subtotal);
   const [tax, setTax] = useState(draft.tax);
   const [total, setTotal] = useState(draft.total);
-  const [reference, setReference] = useState(draft.reference);
-  const [active, setActive] = useState<ActiveField>('total');
-  const [zoom, setZoom] = useState(false);
+  const [deductible, setDeductible] = useState(draft.deductible);
+  const [items, setItems] = useState<LineItem[]>(draft.lineItems);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const subtotal = items.reduce((sum, item) => sum + item.amount * (item.qty || 1), 0);
 
-  function assignMoney(value: number) {
-    const field: ActiveField = active === 'date' ? 'total' : active;
-    setActive(field);
-    if (field === 'subtotal') setSubtotal(value);
-    if (field === 'tax') setTax(value);
-    if (field === 'total') setTotal(value);
+  function applyAmount(value: number) {
+    setTotal(value);
   }
 
   async function save(bypassGate = false) {
@@ -64,14 +55,15 @@ export function ReceiptDetailScreen() {
       const imagePath = await persistImage(draft.imageUri, `${createId()}.${extension}`);
       await insertReceipt({
         merchant: merchant.trim() || 'Store Receipt',
-        date,
+        date: draft.date,
         category,
         subtotal,
         tax,
         total,
-        reference: reference.trim(),
+        reference: draft.reference,
         imagePath,
-        lineItems: draft.lineItems,
+        deductible,
+        lineItems: items,
       });
       navigation.popToTop();
     } catch (saveError: unknown) {
@@ -82,184 +74,127 @@ export function ReceiptDetailScreen() {
   }
 
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <GlassCard style={styles.previewCard}>
-          <Image source={{ uri: draft.imageUri }} style={styles.preview} resizeMode="contain" />
-          <Pressable accessibilityLabel="Zoom receipt" onPress={() => setZoom(true)} style={styles.zoom}>
-            <Text style={styles.zoomLabel}>⤢</Text>
-          </Pressable>
-          <Text style={styles.proof}>Audit Proof Attached</Text>
-        </GlassCard>
-
-        <Text style={styles.label}>MERCHANT</Text>
-        <GlassCard style={styles.field}>
-          <TextInput
-            value={merchant}
-            onChangeText={setMerchant}
-            placeholder="Merchant"
-            placeholderTextColor={colors.slate}
-            style={styles.input}
-          />
-        </GlassCard>
-
-        <Text style={styles.label}>ITEMS</Text>
-        <GlassCard style={styles.table}>
-          {draft.lineItems.map((item) => (
-            <Leader key={item.id} label={item.label} amount={formatPlainMoney(item.amount)} />
-          ))}
-          <Leader label="Subtotal" amount={formatPlainMoney(subtotal)} active={active === 'subtotal'} onPress={() => setActive('subtotal')} />
-          <Leader label="Tax (VAT)" amount={formatPlainMoney(tax)} active={active === 'tax'} onPress={() => setActive('tax')} />
-          <Leader label="Total" amount={formatPlainMoney(total)} active={active === 'total'} onPress={() => setActive('total')} strong />
-        </GlassCard>
-
-        <Pressable onPress={() => setActive('date')}>
-          <Text style={[styles.label, active === 'date' && styles.labelActive]}>DATE · {formatIsoDate(date)}</Text>
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <View style={styles.nav}>
+        <Pressable accessibilityLabel="Back" onPress={() => navigation.goBack()} style={styles.navButton}>
+          <Text style={styles.navGlyph}>←</Text>
         </Pressable>
-        <Text style={styles.hint}>Tap a chip to fill {active === 'date' ? 'the date' : active}.</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-          {draft.moneyCandidates.map((value) => (
-            <Pressable key={`m-${value}`} onPress={() => assignMoney(value)} style={styles.chip}>
-              <Text style={styles.chipText}>{formatPlainMoney(value)}</Text>
-            </Pressable>
-          ))}
-          {draft.dateCandidates.map((value) => (
-            <Pressable key={`d-${value}`} onPress={() => { setActive('date'); setDate(value); }} style={styles.chip}>
-              <Text style={styles.chipText}>{formatIsoDate(value)}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.label}>CATEGORY</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-          {CATEGORIES.map((item) => (
-            <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, category === item && styles.chipOn]}>
-              <Text style={[styles.chipText, category === item && styles.chipTextOn]}>{item}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.label}>REFERENCE</Text>
-        <GlassCard style={styles.field}>
-          <TextInput
-            value={reference}
-            onChangeText={setReference}
-            autoCapitalize="characters"
-            placeholder="Reference"
-            placeholderTextColor={colors.slate}
-            style={styles.input}
-          />
-        </GlassCard>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </ScrollView>
-      <View style={styles.footer}>
-        <YellowButton disabled={saving} label={saving ? 'Saving…' : 'Save to Vault'} onPress={() => { void save(); }} />
+        <Text style={styles.navTitle}>Recognized Items</Text>
+        <Pressable accessibilityLabel="Edit items" onPress={() => setEditing((value) => !value)} style={styles.navButton}>
+          <Text style={styles.navGlyph}>•••</Text>
+        </Pressable>
       </View>
-      <Modal visible={zoom} animationType="fade" onRequestClose={() => setZoom(false)}>
-        <View style={styles.zoomScreen}>
-          <Pressable accessibilityLabel="Close preview" onPress={() => setZoom(false)} style={styles.zoomClose}>
-            <Text style={styles.zoomCloseLabel}>✕</Text>
-          </Pressable>
-          <Image source={{ uri: draft.imageUri }} style={styles.zoomImage} resizeMode="contain" />
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.paper}>
+          <TextInput value={merchant} onChangeText={setMerchant} style={styles.merchant} textAlign="center" />
+          <Text style={styles.scanned}>Scanned on {formatIsoDate(draft.date)} • Ref #{draft.reference || 'INV-204'}</Text>
+          <View style={styles.itemsHeader}>
+            <Text style={styles.itemsTitle}>🧾 Items</Text>
+            <Pressable onPress={() => setEditing((value) => !value)}><Text style={styles.edit}>✏️ Edit Items</Text></Pressable>
+          </View>
+          {items.map((item, index) => (
+            <View key={item.id} style={styles.item}>
+              {editing ? (
+                <TextInput
+                  value={item.label}
+                  onChangeText={(label) => setItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, label } : row))}
+                  style={styles.itemInput}
+                />
+              ) : (
+                <Text style={styles.itemLabel}>{item.qty || 1}x  {item.label}</Text>
+              )}
+              <Text style={styles.itemPrice}>{formatMoney(item.amount, locale)}</Text>
+            </View>
+          ))}
+          <View style={styles.totalRow}><Text style={styles.muted}>Subtotal</Text><Text style={styles.muted}>{formatMoney(subtotal, locale)}</Text></View>
+          <View style={styles.totalRow}>
+            <Text style={styles.muted}>{locale.taxName}</Text>
+            <TextInput
+              keyboardType="decimal-pad"
+              value={String(tax)}
+              onChangeText={(text) => setTax(parseMoney(text) ?? 0)}
+              style={styles.taxInput}
+            />
+          </View>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>{formatMoney(total, locale)}</Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            {draft.moneyCandidates.map((value) => {
+              const selected = value === total;
+              return (
+                <Pressable key={String(value)} onPress={() => applyAmount(value)} style={[styles.chip, selected && styles.chipOn]}>
+                  <Text style={[styles.chipText, selected && styles.chipTextOn]}>{formatMoney(value, locale)}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </View>
-      </Modal>
-    </View>
-  );
-}
 
-function Leader({
-  label,
-  amount,
-  active,
-  strong,
-  onPress,
-}: {
-  label: string;
-  amount: string;
-  active?: boolean;
-  strong?: boolean;
-  onPress?: () => void;
-}) {
-  return (
-    <Pressable disabled={!onPress} onPress={onPress} style={styles.leader}>
-      <Text style={[styles.leaderLabel, strong && styles.leaderStrong, active && styles.leaderActive]}>{label}</Text>
-      <View style={styles.dots} />
-      <Text style={[styles.leaderAmount, strong && styles.leaderTotal, active && styles.leaderActive]}>{amount}</Text>
-    </Pressable>
+        <View style={styles.card}>
+          <View style={styles.toggle}>
+            <Pressable onPress={() => setDeductible(true)} style={[styles.toggleItem, deductible && styles.toggleOn]}>
+              <Text style={[styles.toggleText, deductible && styles.toggleTextOn]}>100% Tax Deductible</Text>
+            </Pressable>
+            <Pressable onPress={() => setDeductible(false)} style={[styles.toggleItem, !deductible && styles.toggleOn]}>
+              <Text style={[styles.toggleText, !deductible && styles.toggleTextOn]}>Personal</Text>
+            </Pressable>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            {PILL_CATEGORIES.map((item) => {
+              const selected = category === item;
+              return (
+                <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, selected && styles.chipOn]}>
+                  <Text style={[styles.chipText, selected && styles.chipTextOn]}>{CATEGORY_EMOJI[item]} {item}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Pressable disabled={saving} onPress={() => { void save(); }} style={styles.save}>
+          <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save to Tax Vault'}</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.obsidian, flex: 1 },
-  content: { padding: 20, paddingBottom: 24 },
-  previewCard: { height: 230, marginBottom: 16, overflow: 'hidden' },
-  preview: { backgroundColor: colors.white, flex: 1 },
-  zoom: {
-    alignItems: 'center',
-    backgroundColor: colors.yellow,
-    borderRadius: 16,
-    height: 32,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: 12,
-    top: 12,
-    width: 32,
-  },
-  zoomLabel: { color: colors.black, fontWeight: '800' },
-  proof: {
-    backgroundColor: colors.obsidian,
-    borderRadius: 999,
-    color: colors.emerald,
-    fontSize: 12,
-    fontWeight: '700',
-    left: 12,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    position: 'absolute',
-    top: 12,
-  },
-  label: { color: colors.slate, fontSize: 12, fontWeight: '700', letterSpacing: 0.4, marginBottom: 8, marginTop: 8 },
-  labelActive: { color: colors.yellow },
-  hint: { color: colors.slate, marginBottom: 8 },
-  field: { marginBottom: 8, paddingHorizontal: 14, paddingVertical: 12 },
-  input: { color: colors.white, fontSize: 18, fontWeight: '600' },
-  table: { marginBottom: 8, padding: 16 },
-  leader: { alignItems: 'flex-end', flexDirection: 'row', marginVertical: 6 },
-  leaderLabel: { color: colors.slate },
-  leaderStrong: { color: colors.white, fontWeight: '700' },
-  leaderActive: { color: colors.yellow },
-  leaderAmount: { color: colors.white, ...fonts.mono },
-  leaderTotal: { color: colors.yellow, fontSize: 18 },
-  dots: { borderBottomColor: colors.hairline, borderBottomWidth: 1, borderStyle: 'dotted', flex: 1, marginBottom: 4, marginHorizontal: 8 },
-  chips: { gap: 8, paddingBottom: 8 },
-  chip: {
-    backgroundColor: colors.glass,
-    borderColor: colors.hairline,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipOn: { backgroundColor: colors.yellow, borderColor: colors.yellow },
-  chipText: { color: colors.white, fontWeight: '600' },
-  chipTextOn: { color: colors.black },
-  error: { color: colors.danger, marginTop: 8 },
-  footer: { padding: 20, paddingBottom: 28 },
-  zoomScreen: { backgroundColor: colors.obsidian, flex: 1, justifyContent: 'center' },
-  zoomClose: {
-    alignItems: 'center',
-    backgroundColor: colors.glass,
-    borderColor: colors.hairline,
-    borderRadius: 18,
-    borderWidth: 1,
-    height: 36,
-    justifyContent: 'center',
-    left: 20,
-    position: 'absolute',
-    top: 58,
-    width: 36,
-  },
-  zoomCloseLabel: { color: colors.white, fontWeight: '700' },
-  zoomImage: { height: '70%', width: '100%' },
+  screen: { flex: 1, backgroundColor: colors.bgCanvas },
+  nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8 },
+  navButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.borderLight },
+  navGlyph: { fontWeight: '700', color: colors.textPrimary },
+  navTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  content: { padding: 16, paddingBottom: 32, gap: 16 },
+  paper: { backgroundColor: colors.bgCard, borderRadius: 28, padding: 24, borderWidth: 1, borderColor: colors.borderLight, ...cardShadow },
+  merchant: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
+  scanned: { textAlign: 'center', color: colors.textSecondary, fontSize: 13, marginBottom: 16 },
+  itemsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  itemsTitle: { fontWeight: '800', color: colors.textPrimary },
+  edit: { color: colors.accentBlue, fontWeight: '700' },
+  item: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderStyle: 'dashed', borderColor: colors.borderLight },
+  itemLabel: { flex: 1, color: colors.textPrimary },
+  itemInput: { flex: 1, color: colors.textPrimary, fontSize: 16 },
+  itemPrice: { fontWeight: '700', color: colors.textPrimary },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
+  muted: { color: colors.textSecondary },
+  taxInput: { minWidth: 90, textAlign: 'right', color: colors.textPrimary, fontWeight: '700' },
+  totalLabel: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
+  totalValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
+  chips: { gap: 8, paddingTop: 16 },
+  chip: { backgroundColor: colors.bgSubtle, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  chipOn: { backgroundColor: colors.btnPrimaryBg },
+  chipText: { color: colors.textPrimary, fontWeight: '700' },
+  chipTextOn: { color: '#FFFFFF' },
+  card: { backgroundColor: colors.bgCard, borderRadius: 28, padding: 20, borderWidth: 1, borderColor: colors.borderLight, gap: 14 },
+  toggle: { flexDirection: 'row', backgroundColor: colors.bgSubtle, borderRadius: 999, padding: 4 },
+  toggleItem: { flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
+  toggleOn: { backgroundColor: colors.bgCard },
+  toggleText: { color: colors.textSecondary, fontWeight: '700', fontSize: 13 },
+  toggleTextOn: { color: colors.textPrimary },
+  error: { color: colors.destructive, textAlign: 'center' },
+  save: { height: 58, borderRadius: 999, backgroundColor: colors.btnPrimaryBg, alignItems: 'center', justifyContent: 'center' },
+  saveText: { color: '#FFFFFF', fontWeight: '800', fontSize: 17 },
 });

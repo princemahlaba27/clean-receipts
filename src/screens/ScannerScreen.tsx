@@ -3,44 +3,34 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FREE_RECEIPT_LIMIT } from '../config';
 import { countReceipts } from '../db/vault';
-import { formatIsoDate, formatMoney } from '../format';
 import { recognizeLines } from '../services/ocr';
 import { parseReceipt } from '../services/receiptParser';
 import { loadSampleDraft } from '../services/sampleReceipt';
 import { scanDocument } from '../services/scanner';
 import { useBilling } from '../services/purchases';
-import { colors, fonts, radius } from '../theme/tokens';
-import { GlassCard, YellowButton } from '../theme/ui';
-import type { ReceiptDraft, RootStackParamList } from '../types';
+import { colors } from '../theme/tokens';
+import type { RootStackParamList } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Scanner'>;
 
 export function ScannerScreen() {
   const navigation = useNavigation<Nav>();
   const billing = useBilling();
-  const [draft, setDraft] = useState<ReceiptDraft | null>(null);
   const [reading, setReading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const laser = useSharedValue(0);
-  const sheet = useSharedValue(360);
 
   useEffect(() => {
-    laser.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.quad) }), -1, true);
+    laser.value = withRepeat(withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.quad) }), -1, true);
   }, [laser]);
 
   const laserStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: laser.value * 280 }],
+    top: 24 + laser.value * 220,
   }));
-  const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: sheet.value }],
-  }));
-
-  useEffect(() => {
-    sheet.value = withTiming(draft ? 0 : 360, { duration: 280 });
-  }, [draft, sheet]);
 
   async function capture(bypassGate = false) {
     setMessage(null);
@@ -61,9 +51,9 @@ export function ScannerScreen() {
       setReading(true);
       const lines = await recognizeLines(imageUri);
       const parsed = parseReceipt(lines);
-      setDraft({ ...parsed, imageUri });
+      navigation.navigate('ReceiptDetail', { draft: { ...parsed, imageUri, deductible: true } });
     } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : 'This device does not support the document scanner. Use Import Sample.');
+      setMessage(error instanceof Error ? error.message : 'This device does not support the document scanner. Try the sample receipt.');
     } finally {
       setReading(false);
     }
@@ -76,110 +66,70 @@ export function ScannerScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.topBar}>
-        <Pressable accessibilityLabel="Close scanner" onPress={() => navigation.goBack()}>
-          <Text style={styles.close}>Close</Text>
+      <SafeAreaView edges={['top']} style={styles.topBar}>
+        <Pressable accessibilityLabel="Back" onPress={() => navigation.goBack()} style={styles.circle}>
+          <Text style={styles.circleText}>←</Text>
+        </Pressable>
+        <Pressable accessibilityLabel="Currency and setup" onPress={() => navigation.goBack()} style={styles.circle}>
+          <Text style={styles.circleText}>⚙️</Text>
+        </Pressable>
+      </SafeAreaView>
+      <View style={styles.stage}>
+        <View style={styles.paper}>
+          <Text style={styles.paperMerchant}>Astron Energy</Text>
+          <Text style={styles.paperLine}>Shop purchase</Text>
+          <Text style={styles.paperLine}>VAT</Text>
+          <Text style={styles.paperTotal}>Total</Text>
+          <Animated.View style={[styles.laser, laserStyle]} />
+        </View>
+        <View style={styles.scanPill}><Text style={styles.scanPillText}>{reading ? 'Scanning Receipt...' : 'Scanning Receipt...'}</Text></View>
+      </View>
+      <View style={styles.sheet}>
+        {message ? <Text style={styles.message}>{message}</Text> : null}
+        <View style={styles.status}><Text style={styles.statusText}>✓ Ready to capture & extract on-device</Text></View>
+        <Pressable disabled={reading} onPress={() => { void capture(); }} style={styles.primary}>
+          <Text style={styles.primaryText}>📸 Open Camera Scanner</Text>
+        </Pressable>
+        <Pressable onPress={() => { void importSample(); }} style={styles.secondary}>
+          <Text style={styles.secondaryText}>🧾 Try Instant Sample Receipt</Text>
         </Pressable>
       </View>
-      <View style={styles.viewport}>
-        <Brackets />
-        {draft ? null : <Animated.View style={[styles.laser, laserStyle]} />}
-        <GlassCard style={styles.pill}>
-          <Text style={styles.pillText}>Align receipt within frame • Auto-snapping</Text>
-        </GlassCard>
-      </View>
-      {message ? <Text style={styles.message}>{message}</Text> : null}
-      {draft ? (
-        <Animated.View style={sheetStyle}>
-          <GlassCard style={styles.drawer}>
-            <Text style={styles.merchant}>{draft.merchant}</Text>
-            <Text style={styles.date}>{formatIsoDate(draft.date)}</Text>
-            <Text style={styles.total}>{formatMoney(draft.total)}</Text>
-            <YellowButton
-              label="Verify Details →"
-              onPress={() => navigation.navigate('ReceiptDetail', { draft })}
-            />
-          </GlassCard>
-        </Animated.View>
-      ) : (
-        <View style={styles.shutterRow}>
-          <Pressable accessibilityLabel="Import sample receipt" onPress={() => { void importSample(); }} style={styles.secondary}>
-            <Text style={styles.secondaryLabel}>Import Sample</Text>
-          </Pressable>
-          <Pressable accessibilityLabel="Scan receipt" disabled={reading} onPress={() => { void capture(); }} style={styles.shutter}>
-            <View style={styles.shutterCore} />
-          </Pressable>
-          <Text style={styles.reading}>{reading ? 'Reading…' : 'Scan'}</Text>
-        </View>
-      )}
     </View>
   );
 }
 
-function Brackets() {
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={[styles.corner, styles.nw]} />
-      <View style={[styles.corner, styles.ne]} />
-      <View style={[styles.corner, styles.sw]} />
-      <View style={[styles.corner, styles.se]} />
-    </View>
-  );
-}
-
-const corner = 28;
 const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.obsidian, flex: 1, paddingBottom: 28 },
-  topBar: { paddingHorizontal: 20, paddingTop: 58 },
-  close: { color: colors.yellow, fontSize: 17, fontWeight: '600' },
-  viewport: {
-    borderColor: colors.hairline,
-    borderRadius: radius,
-    borderWidth: 1,
-    flex: 1,
-    margin: 20,
+  screen: { flex: 1, backgroundColor: '#1C1C1E' },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
+  circle: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
+  circleText: { fontSize: 18 },
+  stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  paper: {
+    width: 230,
+    height: 300,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 18,
     overflow: 'hidden',
   },
-  laser: {
-    backgroundColor: colors.yellow,
-    height: 2,
-    left: 36,
-    opacity: 0.85,
-    position: 'absolute',
-    right: 36,
-    top: 48,
+  paperMerchant: { fontWeight: '800', fontSize: 16, color: colors.textPrimary, textAlign: 'center' },
+  paperLine: { marginTop: 16, color: colors.textSecondary },
+  paperTotal: { marginTop: 24, fontWeight: '800', color: colors.textPrimary },
+  laser: { position: 'absolute', left: 12, right: 12, height: 2, backgroundColor: colors.accentBlue },
+  scanPill: { marginTop: 16, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  scanPillText: { fontWeight: '700', color: colors.textPrimary },
+  sheet: {
+    backgroundColor: colors.bgCard,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    gap: 12,
   },
-  pill: {
-    alignSelf: 'center',
-    borderRadius: 999,
-    bottom: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    position: 'absolute',
-  },
-  pillText: { color: colors.white, fontSize: 12, fontWeight: '600' },
-  message: { color: colors.slate, marginHorizontal: 24, marginBottom: 8 },
-  drawer: { marginHorizontal: 20, padding: 18 },
-  merchant: { color: colors.white, fontSize: 20, fontWeight: '700' },
-  date: { color: colors.slate, marginTop: 4 },
-  total: { color: colors.yellow, fontSize: 40, marginVertical: 10, ...fonts.currency },
-  shutterRow: { alignItems: 'center', gap: 10 },
-  shutter: {
-    alignItems: 'center',
-    borderColor: colors.yellow,
-    borderRadius: 40,
-    borderWidth: 3,
-    height: 74,
-    justifyContent: 'center',
-    width: 74,
-  },
-  shutterCore: { backgroundColor: colors.yellow, borderRadius: 28, height: 56, width: 56 },
-  secondary: { paddingVertical: 4 },
-  secondaryLabel: { color: colors.yellow, fontWeight: '700' },
-  reading: { color: colors.slate, fontSize: 12 },
-  corner: { borderColor: colors.yellow, height: corner, position: 'absolute', width: corner },
-  nw: { borderLeftWidth: 3, borderTopWidth: 3, left: 16, top: 16 },
-  ne: { borderRightWidth: 3, borderTopWidth: 3, right: 16, top: 16 },
-  sw: { borderBottomWidth: 3, borderLeftWidth: 3, bottom: 64, left: 16 },
-  se: { borderBottomWidth: 3, borderRightWidth: 3, bottom: 64, right: 16 },
+  status: { alignSelf: 'center', backgroundColor: colors.accentEmeraldBg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  statusText: { color: colors.accentEmerald, fontWeight: '700' },
+  primary: { height: 56, borderRadius: 999, backgroundColor: colors.btnPrimaryBg, alignItems: 'center', justifyContent: 'center' },
+  primaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16 },
+  secondary: { height: 52, borderRadius: 999, backgroundColor: colors.bgSubtle, alignItems: 'center', justifyContent: 'center' },
+  secondaryText: { color: colors.textPrimary, fontWeight: '700', fontSize: 16 },
+  message: { color: colors.destructive, textAlign: 'center' },
 });

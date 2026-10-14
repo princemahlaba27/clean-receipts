@@ -1,88 +1,69 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ESTIMATED_TAX_RATE, FREE_RECEIPT_LIMIT } from '../config';
 import { countReceipts, listReceipts } from '../db/vault';
+import { formatIsoDate, formatMoney, quarterOf, yearOf } from '../format';
+import { CATEGORY_EMOJI } from '../services/receiptParser';
 import { exportDossier } from '../services/exportService';
-import { useBilling } from '../services/purchases';
 import { loadSampleDraft } from '../services/sampleReceipt';
-import { currentQuarter, formatIsoDate, formatMoney, monthTitle, quarterOf, yearOf } from '../format';
-import { colors, fonts } from '../theme/tokens';
-import { GlassCard, YellowButton } from '../theme/ui';
+import { useBilling } from '../services/purchases';
+import { LOCALES } from '../services/currency';
+import { useCurrency } from '../services/CurrencyContext';
+import { cardShadow, colors } from '../theme/tokens';
 import type { RootStackParamList, StoredReceipt } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Vault'>;
-const QUARTERS = [1, 2, 3, 4] as const;
+type Quarter = 'all' | 1 | 2 | 3 | 4;
 
 export function VaultScreen() {
   const navigation = useNavigation<Nav>();
   const billing = useBilling();
+  const currency = useCurrency();
   const [receipts, setReceipts] = useState<StoredReceipt[]>([]);
-  const [quarter, setQuarter] = useState<(typeof QUARTERS)[number]>(currentQuarter());
   const [year, setYear] = useState(new Date().getFullYear());
-  const [yearOpen, setYearOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const indicator = useSharedValue(quarter - 1);
+  const [quarter, setQuarter] = useState<Quarter>('all');
+  const [sheet, setSheet] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const reload = useCallback(() => {
-    listReceipts().then(setReceipts).catch((loadError: unknown) => {
-      setError(loadError instanceof Error ? loadError.message : 'The vault could not be opened.');
-    });
+  const reload = useCallback(async () => {
+    setReceipts(await listReceipts());
   }, []);
 
-  useFocusEffect(useCallback(() => {
-    reload();
-  }, [reload]));
+  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
-  const filtered = useMemo(
-    () => receipts.filter((receipt) => yearOf(receipt.date) === year && quarterOf(receipt.date) === quarter),
-    [quarter, receipts, year],
-  );
-  const total = filtered.reduce((sum, receipt) => sum + receipt.total, 0);
-  const savings = total * ESTIMATED_TAX_RATE;
-  const years = useMemo(() => {
-    const found = new Set(receipts.map((receipt) => yearOf(receipt.date)));
-    found.add(new Date().getFullYear());
-    found.add(year);
-    return [...found].filter((value) => Number.isFinite(value)).sort((a, b) => b - a);
-  }, [receipts, year]);
-  const sections = useMemo(() => groupByMonth(filtered), [filtered]);
+  useEffect(() => {
+    if (!currency.openScannerAfterSetup) return;
+    currency.consumeScannerIntent();
+    navigation.navigate('Scanner');
+  }, [currency, navigation]);
 
-  function selectQuarter(next: (typeof QUARTERS)[number]) {
-    setQuarter(next);
-    indicator.value = withTiming(next - 1, { duration: 180 });
-  }
+  const filtered = receipts.filter((receipt) => {
+    if (yearOf(receipt.date) !== year) return false;
+    return quarter === 'all' || quarterOf(receipt.date) === quarter;
+  });
+  const balance = filtered.reduce((sum, receipt) => sum + (receipt.deductible ? receipt.total : 0), 0);
+  const savings = balance * ESTIMATED_TAX_RATE;
+  const period = quarter === 'all' ? String(year) : `${year} Q${quarter}`;
 
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: `${indicator.value * 100}%` }],
-  }));
-
-  async function runExport() {
-    if (!filtered.length) {
-      setError(`No receipts in ${year} Q${quarter} to export.`);
-      return;
-    }
-    setExporting(true);
-    setError(null);
+  async function runExport(kind: 'pdf' | 'csv') {
     try {
-      await exportDossier(filtered, `${year} Q${quarter}`);
-    } catch (exportError: unknown) {
-      setError(exportError instanceof Error ? exportError.message : 'The dossier could not be created.');
-    } finally {
-      setExporting(false);
+      await exportDossier(filtered, period, currency.locale, kind);
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : 'The report could not be exported.');
     }
   }
 
-  function beginExport() {
-    if (billing.isPro) {
-      void runExport();
+  function beginExport(kind: 'pdf' | 'csv') {
+    if (!billing.isPro) {
+      billing.requestAccess(() => { void runExport(kind); });
       return;
     }
-    billing.requestAccess(() => { void runExport(); });
+    void runExport(kind);
   }
 
   async function beginScan() {
@@ -94,155 +75,185 @@ export function VaultScreen() {
     navigation.navigate('Scanner');
   }
 
-  return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <GlassCard style={styles.hero}>
-          <Text style={styles.kicker}>{year} Q{quarter} deductible</Text>
-          <Text style={styles.total}>{formatMoney(total)}</Text>
-          <Text style={styles.savings}>+{formatMoney(savings)} Est. Tax Savings (24%)</Text>
-          <Text style={styles.note}>This is an estimate, not tax advice.</Text>
-          <View style={styles.actions}>
-            <Action label="Quick Scan" onPress={() => { void beginScan(); }} />
-            <Action label="Import Sample" onPress={() => { void loadSampleDraft().then((draft) => navigation.navigate('ReceiptDetail', { draft })); }} />
-            <Action label="Filter" onPress={() => setYearOpen(true)} />
-          </View>
-        </GlassCard>
+  async function openSample() {
+    const draft = await loadSampleDraft();
+    navigation.navigate('ReceiptDetail', { draft });
+  }
 
-        <View style={styles.segment} onLayout={() => { indicator.value = quarter - 1; }}>
-          <Animated.View style={[styles.indicator, indicatorStyle]} />
-          {QUARTERS.map((item) => (
-            <Pressable key={item} onPress={() => selectQuarter(item)} style={styles.segmentItem}>
-              <Text style={[styles.segmentLabel, quarter === item && styles.segmentLabelOn]}>Q{item}</Text>
-            </Pressable>
-          ))}
+  return (
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.hello}>Tax Vault 👋</Text>
+            <Text style={styles.ready}>Ready to organize your deductions?</Text>
+          </View>
+          <Pressable onPress={() => setSheet(true)} style={styles.currencyPill}>
+            <Text style={styles.currencyText}>{currency.locale.flag} {currency.locale.code} • {year} ▾</Text>
+          </Pressable>
         </View>
 
-        {sections.map((section) => (
-          <View key={section.title}>
-            <Text style={styles.month}>{section.title}</Text>
-            {section.receipts.map((receipt) => (
-              <GlassCard key={receipt.id} style={styles.row}>
-                <View style={styles.badge}><Text style={styles.badgeText}>{badge(receipt.merchant)}</Text></View>
-                <View style={styles.rowCopy}>
-                  <Text style={styles.merchant} numberOfLines={1}>{receipt.merchant}</Text>
-                  <Text style={styles.meta} numberOfLines={1}>{formatIsoDate(receipt.date)} · {receipt.category}</Text>
-                </View>
-                <Text style={styles.amount}>{formatMoney(receipt.total)}</Text>
-              </GlassCard>
-            ))}
+        <View style={styles.hero}>
+          <Text style={styles.heroLabel}>Current Deductible Balance</Text>
+          <Text style={styles.heroAmount}>{formatMoney(balance, currency.locale)}</Text>
+          <View style={styles.savings}>
+            <Text style={styles.savingsText}>✨ +{formatMoney(savings, currency.locale)} Est. Tax Savings</Text>
           </View>
-        ))}
-        {!filtered.length ? <Text style={styles.empty}>No receipts in this quarter.</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+          <View style={styles.actions}>
+            <Circle icon="scan-outline" label="Scan" dark onPress={() => { void beginScan(); }} />
+            <Circle icon="document-text-outline" label="Sample" onPress={() => { void openSample(); }} />
+            <Circle icon="share-outline" label="Export PDF" onPress={() => beginExport('pdf')} />
+            <Circle icon="grid-outline" label="Export CSV" onPress={() => beginExport('csv')} />
+          </View>
+        </View>
+
+        <View style={styles.segments}>
+          {(['all', 1, 2, 3, 4] as const).map((item) => {
+            const active = quarter === item;
+            return (
+              <Pressable key={String(item)} onPress={() => setQuarter(item)} style={[styles.segment, active && styles.segmentOn]}>
+                <Text style={[styles.segmentText, active && styles.segmentTextOn]}>{item === 'all' ? 'All' : `Q${item}`}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.sectionRow}>
+          <Text style={styles.section}>🧾 Recent Receipts</Text>
+          <Pressable onPress={() => beginExport('pdf')}><Text style={styles.link}>Export Report</Text></Pressable>
+        </View>
+        {message ? <Text style={styles.message}>{message}</Text> : null}
+        {filtered.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyEmoji}>🧾</Text>
+            <Text style={styles.emptyTitle}>No receipts saved yet</Text>
+            <Pressable onPress={() => { void beginScan(); }} style={styles.emptyButton}>
+              <Text style={styles.emptyButtonText}>📸 Scan a Receipt</Text>
+            </Pressable>
+          </View>
+        ) : (
+          filtered.map((receipt) => (
+            <View key={receipt.id} style={styles.row}>
+              <View style={styles.rowEmoji}><Text style={styles.rowEmojiText}>{CATEGORY_EMOJI[receipt.category]}</Text></View>
+              <View style={styles.rowCopy}>
+                <Text style={styles.merchant}>{receipt.merchant}</Text>
+                <Text style={styles.meta}>{formatIsoDate(receipt.date)} · {receipt.category}</Text>
+              </View>
+              <Text style={styles.amount}>{formatMoney(receipt.total, currency.locale)}</Text>
+            </View>
+          ))
+        )}
       </ScrollView>
-      <View style={styles.footer}>
-        <YellowButton
-          disabled={exporting}
-          label={exporting ? 'Preparing dossier…' : 'Export Tax Dossier'}
-          onPress={beginExport}
-        />
+      <View style={styles.dock}>
+        <Pressable onPress={() => { void beginScan(); }} style={styles.dockPrimary}>
+          <Text style={styles.dockPrimaryText}>📸 Scan Receipt</Text>
+        </Pressable>
+        <Pressable onPress={() => beginExport('pdf')} style={styles.dockSecondary}>
+          <Text style={styles.dockSecondaryText}>📄 Export Report</Text>
+        </Pressable>
       </View>
-      <Modal transparent visible={yearOpen} animationType="fade" onRequestClose={() => setYearOpen(false)}>
-        <Pressable style={styles.dim} onPress={() => setYearOpen(false)}>
-          <GlassCard style={styles.yearSheet}>
-            <Text style={styles.yearTitle}>Year</Text>
-            {years.map((item) => (
-              <Pressable key={item} onPress={() => { setYear(item); setYearOpen(false); }} style={styles.yearRow}>
-                <Text style={[styles.yearText, item === year && styles.yearOn]}>{item}</Text>
+      <Modal animationType="slide" transparent visible={sheet} onRequestClose={() => setSheet(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setSheet(false)}>
+          <Pressable style={styles.sheet} onPress={() => undefined}>
+            <Text style={styles.sheetTitle}>Currency & tax year</Text>
+            {LOCALES.map((item) => (
+              <Pressable key={item.code} onPress={() => { void currency.setCurrency(item.code); }} style={styles.sheetRow}>
+                <Text style={styles.sheetRowText}>{item.flag} {item.country} ({item.code})</Text>
+                {currency.locale.code === item.code ? <Text>✓</Text> : null}
               </Pressable>
             ))}
-          </GlassCard>
+            <View style={styles.yearRow}>
+              {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map((value) => (
+                <Pressable key={value} onPress={() => setYear(value)} style={[styles.yearChip, year === value && styles.yearChipOn]}>
+                  <Text style={[styles.yearChipText, year === value && styles.yearChipTextOn]}>{value}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable onPress={() => { setSheet(false); void currency.rerunSetup(); }} style={styles.rerun}>
+              <Text style={styles.link}>Re-run Setup / Currency</Text>
+            </Pressable>
+          </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
-function Action({ label, onPress }: { label: string; onPress: () => void }) {
+function Circle({
+  icon,
+  label,
+  onPress,
+  dark,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  dark?: boolean;
+}) {
   return (
-    <Pressable accessibilityLabel={label} onPress={onPress} style={styles.action}>
-      <View style={styles.actionCircle}><Text style={styles.actionMark}>{label.slice(0, 1)}</Text></View>
-      <Text style={styles.actionLabel}>{label}</Text>
+    <Pressable onPress={onPress} style={styles.circleWrap}>
+      <View style={[styles.circle, dark && styles.circleDark]}>
+        <Ionicons name={icon} size={22} color={dark ? '#FFFFFF' : colors.textPrimary} />
+      </View>
+      <Text style={styles.circleLabel}>{label}</Text>
     </Pressable>
   );
 }
 
-function groupByMonth(receipts: StoredReceipt[]) {
-  const groups = new Map<string, StoredReceipt[]>();
-  for (const receipt of receipts) {
-    const title = monthTitle(receipt.date);
-    const bucket = groups.get(title) ?? [];
-    bucket.push(receipt);
-    groups.set(title, bucket);
-  }
-  return [...groups.entries()].map(([title, items]) => ({ title, receipts: items }));
-}
-
-function badge(merchant: string): string {
-  const letter = [...merchant].find((char) => /\p{L}/u.test(char));
-  return (letter ?? '?').toUpperCase();
-}
-
 const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.obsidian, flex: 1 },
-  content: { padding: 20, paddingBottom: 24 },
-  hero: { padding: 18 },
-  kicker: { color: colors.slate, fontWeight: '600' },
-  total: { color: colors.yellow, fontSize: 42, marginTop: 4, ...fonts.currency },
-  savings: { color: colors.emerald, fontWeight: '700', marginTop: 8 },
-  note: { color: colors.slate, fontSize: 12, marginTop: 4 },
-  actions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 },
-  action: { alignItems: 'center', width: 92 },
-  actionCircle: {
-    alignItems: 'center',
-    backgroundColor: colors.obsidian,
-    borderColor: colors.hairline,
-    borderRadius: 24,
-    borderWidth: 1,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
-  },
-  actionMark: { color: colors.yellow, fontWeight: '800' },
-  actionLabel: { color: colors.slate, fontSize: 11, marginTop: 6, textAlign: 'center' },
-  segment: {
-    backgroundColor: colors.glass,
-    borderColor: colors.hairline,
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: 'row',
-    marginVertical: 16,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  indicator: {
-    backgroundColor: colors.yellow,
-    borderRadius: 10,
-    bottom: 3,
-    left: 3,
-    position: 'absolute',
-    top: 3,
-    width: '25%',
-  },
-  segmentItem: { alignItems: 'center', flex: 1, paddingVertical: 10 },
-  segmentLabel: { color: colors.white, fontWeight: '700' },
-  segmentLabelOn: { color: colors.black },
-  month: { color: colors.white, fontWeight: '700', marginBottom: 8, marginTop: 8 },
-  row: { alignItems: 'center', flexDirection: 'row', gap: 12, marginBottom: 10, padding: 14 },
-  badge: { alignItems: 'center', backgroundColor: colors.yellow, borderRadius: 12, height: 44, justifyContent: 'center', width: 44 },
-  badgeText: { color: colors.black, fontWeight: '800' },
+  screen: { flex: 1, backgroundColor: colors.bgCanvas },
+  content: { padding: 20, paddingBottom: 120, gap: 14 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  headerCopy: { flex: 1 },
+  hello: { fontSize: 24, fontWeight: '800', color: colors.textPrimary },
+  ready: { marginTop: 4, fontSize: 14, color: colors.textSecondary },
+  currencyPill: { backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.borderLight, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  currencyText: { color: colors.textPrimary, fontWeight: '700', fontSize: 13 },
+  hero: { backgroundColor: colors.bgCard, borderRadius: 28, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: colors.borderLight, ...cardShadow },
+  heroLabel: { fontSize: 13, color: colors.textSecondary },
+  heroAmount: { marginTop: 8, fontSize: 42, fontWeight: '800', color: colors.textPrimary },
+  savings: { marginTop: 12, backgroundColor: colors.accentEmeraldBg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  savingsText: { color: colors.accentEmerald, fontWeight: '700' },
+  actions: { marginTop: 22, width: '100%', flexDirection: 'row', justifyContent: 'space-between' },
+  circleWrap: { alignItems: 'center', width: 72 },
+  circle: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.bgSubtle, alignItems: 'center', justifyContent: 'center' },
+  circleDark: { backgroundColor: colors.btnPrimaryBg },
+  circleLabel: { marginTop: 8, fontSize: 12, color: colors.textPrimary, fontWeight: '600', textAlign: 'center' },
+  segments: { flexDirection: 'row', backgroundColor: colors.bgSubtle, borderRadius: 999, padding: 4 },
+  segment: { flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center' },
+  segmentOn: { backgroundColor: colors.btnPrimaryBg },
+  segmentText: { color: colors.textSecondary, fontWeight: '700' },
+  segmentTextOn: { color: '#FFFFFF' },
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
+  section: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  link: { color: colors.accentBlue, fontWeight: '700' },
+  message: { color: colors.destructive },
+  empty: { backgroundColor: colors.bgCard, borderRadius: 28, borderWidth: 1, borderColor: colors.borderLight, padding: 28, alignItems: 'center', ...cardShadow },
+  emptyEmoji: { fontSize: 42 },
+  emptyTitle: { marginTop: 8, fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+  emptyButton: { marginTop: 16, backgroundColor: colors.btnPrimaryBg, borderRadius: 999, paddingHorizontal: 18, height: 48, alignItems: 'center', justifyContent: 'center' },
+  emptyButtonText: { color: '#FFFFFF', fontWeight: '700' },
+  row: { backgroundColor: colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: colors.borderLight, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  rowEmoji: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.bgSubtle, alignItems: 'center', justifyContent: 'center' },
+  rowEmojiText: { fontSize: 20 },
   rowCopy: { flex: 1 },
-  merchant: { color: colors.white, fontSize: 17, fontWeight: '700' },
-  meta: { color: colors.slate, fontSize: 12, marginTop: 4 },
-  amount: { color: colors.white, fontWeight: '700', ...fonts.currency },
-  empty: { color: colors.slate, marginTop: 12 },
-  error: { color: colors.danger, marginTop: 12 },
-  footer: { padding: 20, paddingBottom: 28 },
-  dim: { backgroundColor: 'rgba(0,0,0,0.45)', flex: 1, justifyContent: 'flex-end' },
-  yearSheet: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: 20 },
-  yearTitle: { color: colors.white, fontSize: 17, fontWeight: '700', marginBottom: 8 },
-  yearRow: { paddingVertical: 12 },
-  yearText: { color: colors.white, fontSize: 17 },
-  yearOn: { color: colors.yellow },
+  merchant: { fontWeight: '700', color: colors.textPrimary, fontSize: 16 },
+  meta: { color: colors.textSecondary, marginTop: 2, fontSize: 13 },
+  amount: { fontWeight: '800', color: colors.textPrimary },
+  dock: { position: 'absolute', left: 16, right: 16, bottom: 18, flexDirection: 'row', gap: 10, backgroundColor: colors.bgCard, borderRadius: 999, padding: 8, borderWidth: 1, borderColor: colors.borderLight, ...cardShadow },
+  dockPrimary: { flex: 1.2, height: 52, borderRadius: 999, backgroundColor: colors.btnPrimaryBg, alignItems: 'center', justifyContent: 'center' },
+  dockPrimaryText: { color: '#FFFFFF', fontWeight: '800' },
+  dockSecondary: { flex: 1, height: 52, borderRadius: 999, backgroundColor: colors.bgSubtle, alignItems: 'center', justifyContent: 'center' },
+  dockSecondaryText: { color: colors.textPrimary, fontWeight: '700' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(16,24,40,0.35)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.bgCard, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, gap: 8 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
+  sheetRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
+  sheetRowText: { color: colors.textPrimary, fontSize: 16 },
+  yearRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  yearChip: { borderRadius: 999, backgroundColor: colors.bgSubtle, paddingHorizontal: 14, paddingVertical: 8 },
+  yearChipOn: { backgroundColor: colors.btnPrimaryBg },
+  yearChipText: { color: colors.textPrimary, fontWeight: '700' },
+  yearChipTextOn: { color: '#FFFFFF' },
+  rerun: { alignItems: 'center', paddingVertical: 14 },
 });
