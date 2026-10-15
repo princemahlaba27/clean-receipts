@@ -8,16 +8,16 @@ import { currencyForRegion, LOCALES, type CurrencyCode, type LocaleProfile } fro
 import { useCurrency } from '../services/CurrencyContext';
 import { colors } from '../theme/tokens';
 
-const LOSS_OPTIONS = [
-  { id: 'mid', emoji: '💸', title: '$500 – $1,500 / R10,000+' },
-  { id: 'over', emoji: '📉', title: '$1,500 – $5,000+ / R30,000+' },
-  { id: 'unknown', emoji: '😰', title: 'I have no clue, I scramble at tax deadline' },
+const LOSS_OPTIONS: Array<{ id: string; emoji: string; title: string; body?: string }> = [
+  { id: 'mid', emoji: '💸', title: 'R5,000 – R15,000 / $500 – $1,500', body: 'Crumpled thermal receipts I forgot to claim' },
+  { id: 'over', emoji: '📉', title: 'R15,000 – R50,000+ / $3,000+', body: 'Lost deductions because my bank statements lack proofs' },
+  { id: 'unknown', emoji: '😰', title: 'I have no clue', body: 'I scramble every tax filing deadline' },
 ];
 
-const FRUSTRATION_OPTIONS = [
+const FRUSTRATION_OPTIONS: Array<{ id: string; emoji: string; title: string; body?: string }> = [
   { id: 'audit', emoji: '🛡️', title: 'Fear of IRS / SARS Audit Penalties' },
   { id: 'proofs', emoji: '📄', title: 'Bank statements lack itemized receipt proofs' },
-  { id: 'manual', emoji: '⏳', title: 'Wasting hours manually building spreadsheets' },
+  { id: 'manual', emoji: '⏳', title: 'Wasting weekends manually typing spreadsheets' },
 ];
 
 export function OnboardingScreen() {
@@ -43,7 +43,7 @@ export function OnboardingScreen() {
       </View>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {step === 0 ? (
-          <Step title="Currency and tax rules" subtitle="Matched to your region. One tap switches it.">
+          <Step title="Country & Currency" subtitle="Matched to your region. One tap switches it.">
             {LOCALES.map((item) => (
               <Choice
                 key={item.code}
@@ -105,7 +105,7 @@ export function OnboardingScreen() {
               <Text style={styles.ctaText}>Scan Your First Receipt</Text>
             </Pressable>
             <Pressable accessibilityRole="button" onPress={() => { void finish('vault'); }}>
-              <Text style={styles.skip}>Skip to Tax Vault</Text>
+              <Text style={styles.skip}>Skip for now</Text>
             </Pressable>
           </>
         )}
@@ -153,16 +153,16 @@ function Choice({
 function BankPreview({ locale }: { locale: LocaleProfile }) {
   return (
     <View>
-      <Text style={styles.title}>It's really that easy to match a bank statement.</Text>
-      <Text style={styles.subtitle}>The charge below uses your selected currency.</Text>
+      <Text style={styles.title}>Expense reports, ready in seconds.</Text>
+      <Text style={styles.subtitle}>This example uses your currency.</Text>
       <View style={styles.report}>
-        <Text style={styles.kicker}>BANK STATEMENT</Text>
+        <Text style={styles.kicker}>EXPENSE REPORT</Text>
         <Text style={styles.reportTitle}>{locale.country}</Text>
         <Text style={styles.reportMeta}>{locale.code} · {locale.taxName}</Text>
         <View style={styles.reportRow}>
           <View style={styles.choiceCopy}>
-            <Text style={styles.choiceTitle}>Card debit</Text>
-            <Text style={styles.choiceBody}>Receipt on file</Text>
+            <Text style={styles.choiceTitle}>Card purchase</Text>
+            <Text style={styles.choiceBody}>Receipt saved</Text>
           </View>
           <Text style={styles.reportTotal}>{formatMoney(142.06, locale)}</Text>
         </View>

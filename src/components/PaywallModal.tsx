@@ -7,8 +7,8 @@ import { useBilling, visibleBillingError } from '../services/purchases';
 import { colors } from '../theme/tokens';
 
 const STEPS = [
-  { icon: '✓', title: 'Set up Tax Receipts', body: 'You configured your local currency & tax categories', done: true },
-  { icon: '🔓', title: 'Today: Get Full Access', body: 'Unlimited receipt scans, PDF audit reports & Excel/CSV exports', done: false },
+  { icon: '✓', title: 'Set up Tax Receipts', body: 'You picked your country and currency', done: true },
+  { icon: '🔓', title: 'Today: Get full access', body: 'Unlimited scans, PDF reports, and spreadsheet exports', done: false },
   { icon: '🔔', title: 'Day 2: Trial Reminder', body: 'Reminder before your trial ends. Zero surprises.', done: false },
   { icon: '⭐', title: 'Day 3: Trial Ends', body: 'Cancel anytime in 1 tap in iPhone Settings.', done: false },
 ];
@@ -21,7 +21,7 @@ export function PaywallModal() {
   return (
     <Modal animationType="slide" visible={billing.paywallVisible} onRequestClose={billing.closePaywall}>
       <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
-          <View style={[styles.top, { paddingTop: insets.top + 10 }]}>
+          <View style={[styles.top, { paddingTop: insets.top + 8 }]}>
             <Pressable accessibilityLabel="Close" onPress={billing.closePaywall}><Text style={styles.close}>✕</Text></Pressable>
             <Pressable onPress={() => { void billing.restore(); }}><Text style={styles.restore}>Restore</Text></Pressable>
           </View>
@@ -60,7 +60,7 @@ export function PaywallModal() {
             <Text style={styles.legal}>
               <Text onPress={() => { void billing.restore(); }}>Restore Purchases</Text>
               {'  •  '}
-              <Text onPress={() => { void Linking.openURL(TERMS_URL); }}>Terms of Use (EULA)</Text>
+              <Text onPress={() => { void Linking.openURL(TERMS_URL); }}>Terms of Use</Text>
               {'  •  '}
               <Text onPress={() => { void Linking.openURL(PRIVACY_URL); }}>Privacy Policy</Text>
             </Text>
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 12 },
   footer: { paddingHorizontal: 20, paddingBottom: 12 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8 },
-  close: { fontSize: 20, color: 'rgba(102, 112, 133, 0.35)', fontWeight: '700' },
+  close: { fontSize: 20, color: 'rgba(102, 112, 133, 0.25)', fontWeight: '700' },
   restore: { color: colors.accentBlue, fontWeight: '700' },
   title: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginBottom: 18 },
   step: { flexDirection: 'row', gap: 12, marginBottom: 16 },

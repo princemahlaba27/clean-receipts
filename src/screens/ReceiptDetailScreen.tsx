@@ -13,7 +13,7 @@ import { createId } from '../services/ids';
 import { parseMoney } from '../services/receiptParser';
 import { useCurrency } from '../services/CurrencyContext';
 import { CATEGORIES, type Category, type LineItem, type RootStackParamList } from '../types';
-import { CATEGORY_EMOJI } from '../services/receiptParser';
+import { CATEGORY_EMOJI, CATEGORY_LABEL } from '../services/receiptParser';
 import { cardShadow, colors } from '../theme/tokens';
 
 type Route = RouteProp<RootStackParamList, 'ReceiptDetail'>;
@@ -80,7 +80,7 @@ export function ReceiptDetailScreen() {
         <Pressable accessibilityLabel="Back" onPress={() => navigation.goBack()} style={styles.navButton}>
           <Text style={styles.navGlyph}>←</Text>
         </Pressable>
-        <Text style={styles.navTitle}>Recognized Items</Text>
+        <Text style={styles.navTitle}>Receipt</Text>
         <Pressable accessibilityLabel="Edit items" onPress={() => setEditing((value) => !value)} style={styles.navButton}>
           <Text style={styles.navGlyph}>•••</Text>
         </Pressable>
@@ -88,10 +88,10 @@ export function ReceiptDetailScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.paper}>
           <TextInput value={merchant} onChangeText={setMerchant} style={styles.merchant} textAlign="center" />
-          <Text style={styles.scanned}>Scanned on {formatIsoDate(draft.date)} • Ref #{draft.reference || 'INV-204'}</Text>
+          <Text style={styles.scanned}>Scanned {formatIsoDate(draft.date)}{draft.reference ? ` • No. ${draft.reference}` : ''}</Text>
           <View style={styles.itemsHeader}>
-            <Text style={styles.itemsTitle}>🧾 Items</Text>
-            <Pressable onPress={() => setEditing((value) => !value)}><Text style={styles.edit}>✏️ Edit Items</Text></Pressable>
+            <Text style={styles.itemsTitle}>Items</Text>
+            <Pressable onPress={() => setEditing((value) => !value)}><Text style={styles.edit}>{editing ? 'Done' : 'Edit'}</Text></Pressable>
           </View>
           {items.map((item, index) => (
             <View key={item.id} style={styles.item}>
@@ -142,10 +142,10 @@ export function ReceiptDetailScreen() {
         <View style={styles.card}>
           <View style={styles.toggle}>
             <Pressable onPress={() => setDeductible(true)} style={[styles.toggleItem, deductible && styles.toggleOn]}>
-              <Text numberOfLines={1} style={[styles.toggleText, deductible && styles.toggleTextOn]}>Business</Text>
+              <Text numberOfLines={1} style={[styles.toggleText, deductible && styles.toggleTextOn]}>🏢 Business (100%)</Text>
             </Pressable>
             <Pressable onPress={() => setDeductible(false)} style={[styles.toggleItem, !deductible && styles.toggleOn]}>
-              <Text numberOfLines={1} style={[styles.toggleText, !deductible && styles.toggleTextOn]}>Personal</Text>
+              <Text numberOfLines={1} style={[styles.toggleText, !deductible && styles.toggleTextOn]}>👤 Personal</Text>
             </Pressable>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
@@ -153,7 +153,7 @@ export function ReceiptDetailScreen() {
               const selected = category === item;
               return (
                 <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, selected && styles.chipOn]}>
-                  <Text style={[styles.chipText, selected && styles.chipTextOn]}>{CATEGORY_EMOJI[item]} {item}</Text>
+                  <Text style={[styles.chipText, selected && styles.chipTextOn]}>{CATEGORY_EMOJI[item]} {CATEGORY_LABEL[item]}</Text>
                 </Pressable>
               );
             })}
@@ -163,7 +163,7 @@ export function ReceiptDetailScreen() {
       </ScrollView>
       <View style={styles.footer}>
         <Pressable disabled={saving} onPress={() => { void save(); }} style={styles.save}>
-          <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save to Tax Vault'}</Text>
+          <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save receipt'}</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -195,17 +195,17 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
   totalValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
   chips: { gap: 8, paddingTop: 16, paddingHorizontal: 4 },
-  amountChips: { gap: 8, paddingTop: 16, paddingHorizontal: 12, paddingBottom: 4 },
+  amountChips: { gap: 8, paddingTop: 16, paddingHorizontal: 16, paddingBottom: 4 },
   chip: { backgroundColor: colors.bgSubtle, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   chipOn: { backgroundColor: colors.btnPrimaryBg },
   chipText: { color: colors.textPrimary, fontWeight: '700' },
   chipTextOn: { color: '#FFFFFF' },
   card: { backgroundColor: colors.bgCard, borderRadius: 28, padding: 20, borderWidth: 1, borderColor: colors.borderLight, gap: 14 },
-  toggle: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F4F7', borderRadius: 999, padding: 4, height: 48 },
-  toggleItem: { flex: 1, height: 40, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  toggleOn: { backgroundColor: '#FFFFFF' },
-  toggleText: { color: colors.textSecondary, fontWeight: '700', fontSize: 15 },
-  toggleTextOn: { color: colors.textPrimary },
+  toggle: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F4F7', borderRadius: 999, padding: 4, height: 48, marginTop: 16 },
+  toggleItem: { flex: 1, height: '100%', borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  toggleOn: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
+  toggleText: { color: '#667085', fontWeight: '700', fontSize: 13 },
+  toggleTextOn: { color: '#101828' },
   error: { color: colors.destructive, textAlign: 'center' },
   save: { height: 58, borderRadius: 999, backgroundColor: colors.btnPrimaryBg, alignItems: 'center', justifyContent: 'center' },
   saveText: { color: '#FFFFFF', fontWeight: '800', fontSize: 17 },

@@ -3,6 +3,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
 import { ESTIMATED_TAX_RATE } from '../config';
+import { CATEGORY_LABEL } from './receiptParser';
 import { formatIsoDate, formatMoney } from '../format';
 import type { StoredReceipt } from '../types';
 import type { LocaleProfile } from './currency';
@@ -38,7 +39,7 @@ export async function exportDossier(
   await Sharing.shareAsync(pdf.uri, {
     mimeType: 'application/pdf',
     UTI: 'com.adobe.pdf',
-    dialogTitle: 'Tax Expense Statement',
+    dialogTitle: 'Expense report',
   });
 }
 
@@ -56,11 +57,13 @@ async function downscaleProof(uri: string): Promise<string> {
 
 function renderHtml(receipts: StoredReceipt[], proofs: string[], periodTitle: string, locale: LocaleProfile): string {
   const rows = receipts
-    .map((receipt) => {
+    .map((receipt, index) => {
+      const ref = receipt.reference.trim() || String(index + 1);
       return `<tr>
+        <td>${escapeHtml(ref)}</td>
         <td>${escapeHtml(formatIsoDate(receipt.date))}</td>
         <td>${escapeHtml(receipt.merchant)}</td>
-        <td>${escapeHtml(receipt.category)}</td>
+        <td>${escapeHtml(CATEGORY_LABEL[receipt.category])}</td>
         <td class="num">${escapeHtml(formatMoney(receipt.tax, locale))}</td>
         <td class="num">${escapeHtml(formatMoney(receipt.total, locale))}</td>
       </tr>`;
@@ -73,7 +76,8 @@ function renderHtml(receipts: StoredReceipt[], proofs: string[], periodTitle: st
     .map((receipt, index) => {
       const src = proofs[index]?.replace(/"/g, '%22');
       if (!src) return '';
-      return `<figure><figcaption>${escapeHtml(formatIsoDate(receipt.date))} · ${escapeHtml(receipt.merchant)} · ${escapeHtml(formatMoney(receipt.total, locale))}</figcaption><img src="${src}" alt="" /></figure>`;
+      const proofId = receipt.reference.trim() || String(index + 1);
+      return `<figure><figcaption>Receipt #${escapeHtml(proofId)} — ${escapeHtml(receipt.merchant)}</figcaption><img src="${src}" alt="" /></figure>`;
     })
     .filter(Boolean)
     .join('');
@@ -93,8 +97,7 @@ function renderHtml(receipts: StoredReceipt[], proofs: string[], periodTitle: st
       .totals div { display: flex; justify-content: flex-end; gap: 18px; padding: 7px 0; border-bottom: 1px solid #F2F4F7; }
       .totals span { color: #667085; }
       .totals strong { min-width: 120px; text-align: right; }
-      .proofs { page-break-before: always; break-before: page; }
-      figure { margin: 0; page-break-inside: avoid; break-inside: avoid; }
+      figure { margin: 0; page-break-before: always; break-before: page; page-break-inside: avoid; break-inside: avoid; }
       figcaption { font-size: 12px; color: #667085; padding: 16px 16px 8px; }
       img {
         width: 100%;
@@ -105,16 +108,16 @@ function renderHtml(receipts: StoredReceipt[], proofs: string[], periodTitle: st
       }
     </style></head><body>
     <section class="statement">
-      <h1>Tax Expense Statement</h1>
-      <p class="meta">Period ${escapeHtml(periodTitle)}<br/>Generated ${escapeHtml(todayLabel())}<br/>Currency ${escapeHtml(locale.code)}</p>
+      <h1>Expense report</h1>
+      <p class="meta">Statement Period ${escapeHtml(periodTitle)}<br/>Generation Date ${escapeHtml(todayLabel())}<br/>Currency Code ${escapeHtml(locale.code)}</p>
       <table>
-        <thead><tr><th>Date</th><th>Vendor / Merchant</th><th>Category</th><th class="num">VAT / Tax</th><th class="num">Total</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5">No receipts in this period.</td></tr>'}</tbody>
+        <thead><tr><th>Ref #</th><th>Date</th><th>Merchant</th><th>Category</th><th class="num">VAT/Tax</th><th class="num">Total</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">No receipts in this period.</td></tr>'}</tbody>
       </table>
       <div class="totals">
-        <div><span>Total Gross Expenses</span><strong>${escapeHtml(formatMoney(gross, locale))}</strong></div>
-        <div><span>Total Deductibles</span><strong>${escapeHtml(formatMoney(deductible, locale))}</strong></div>
-        <div><span>Estimated Tax Savings</span><strong>${escapeHtml(formatMoney(savings, locale))}</strong></div>
+        <div><span>Total spent</span><strong>${escapeHtml(formatMoney(gross, locale))}</strong></div>
+        <div><span>Business expenses</span><strong>${escapeHtml(formatMoney(deductible, locale))}</strong></div>
+        <div><span>Estimated tax savings</span><strong>${escapeHtml(formatMoney(savings, locale))}</strong></div>
       </div>
     </section>
     ${proofsSection}
@@ -136,7 +139,7 @@ function renderCsv(receipts: StoredReceipt[], locale: LocaleProfile): string {
         String(index + 1),
         receipt.date,
         csv(receipt.merchant),
-        csv(receipt.category),
+        csv(CATEGORY_LABEL[receipt.category]),
         csv(formatMoney(receipt.tax, locale)),
         csv(formatMoney(receipt.total, locale)),
         locale.code,
@@ -156,5 +159,5 @@ function escapeHtml(value: string): string {
 
 function fileName(periodTitle: string, extension: string): string {
   const slug = periodTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return `expense-report-${slug || 'vault'}.${extension}`;
+  return `expense-report-${slug || 'receipts'}.${extension}`;
 }

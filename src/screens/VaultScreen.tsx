@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ESTIMATED_TAX_RATE, FREE_RECEIPT_LIMIT } from '../config';
 import { countReceipts, listReceipts } from '../db/vault';
 import { formatIsoDate, formatMoney, quarterOf, yearOf } from '../format';
-import { CATEGORY_EMOJI } from '../services/receiptParser';
+import { CATEGORY_EMOJI, CATEGORY_LABEL } from '../services/receiptParser';
 import { exportDossier } from '../services/exportService';
 import { useBilling } from '../services/purchases';
 import { LOCALES } from '../services/currency';
@@ -79,8 +79,8 @@ export function VaultScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.headerCopy}>
-            <Text style={styles.hello}>Tax Vault 👋</Text>
-            <Text style={styles.ready}>Ready to organize your deductions?</Text>
+            <Text style={styles.hello}>Receipts 👋</Text>
+            <Text style={styles.ready}>Keep your receipts ready for tax time.</Text>
           </View>
           <Pressable onPress={() => setSheet(true)} style={styles.currencyPill}>
             <Text style={styles.currencyText}>{currency.locale.flag} {currency.locale.code} • {year} ▾</Text>
@@ -88,20 +88,20 @@ export function VaultScreen() {
         </View>
 
         <View style={styles.hero}>
-          <Text style={styles.heroLabel}>Current Deductible Balance</Text>
+          <Text style={styles.heroLabel}>Business expenses</Text>
           <Text style={styles.heroAmount}>{formatMoney(balance, currency.locale)}</Text>
           <View style={styles.savings}>
-            <Text style={styles.savingsText}>📈 +{formatMoney(savings, currency.locale)} Est. Tax Savings</Text>
+            <Text style={styles.savingsText}>📈 +{formatMoney(savings, currency.locale)} estimated tax savings</Text>
           </View>
           <Pressable onPress={() => { void beginScan(); }} style={styles.scanPill}>
-            <Text style={styles.scanPillText}>Scan Receipt</Text>
+            <Text style={styles.scanPillText}>📷 Scan Receipt</Text>
           </Pressable>
           <View style={styles.exportRow}>
             <Pressable onPress={() => beginExport('pdf')} style={styles.exportPill}>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.exportText}>Export PDF Statement</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={styles.exportText}>📄 Export PDF</Text>
             </Pressable>
             <Pressable onPress={() => beginExport('csv')} style={styles.exportPill}>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.exportText}>Export CSV</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={styles.exportText}>📊 Export spreadsheet</Text>
             </Pressable>
           </View>
         </View>
@@ -123,7 +123,8 @@ export function VaultScreen() {
               <View style={styles.emptyIcon}>
                 <Ionicons name="book-outline" size={36} color="#111111" />
               </View>
-              <Text style={styles.emptyTitle}>Your Vault is Empty</Text>
+              <Text style={styles.emptyTitle}>No receipts yet</Text>
+              <Text style={styles.emptySubtitle}>Scan a receipt to keep it for tax time. It stays on this phone.</Text>
               <Pressable onPress={() => { void beginScan(); }} style={styles.emptyButton}>
                 <Text style={styles.emptyButtonText}>Scan Your First Receipt</Text>
               </Pressable>
@@ -133,7 +134,7 @@ export function VaultScreen() {
           <View style={styles.list}>
             <View style={styles.sectionRow}>
               <Text style={styles.section}>🧾 Recent Receipts</Text>
-              <Pressable onPress={() => beginExport('pdf')}><Text style={styles.link}>Export Report</Text></Pressable>
+              <Pressable onPress={() => beginExport('pdf')}><Text style={styles.link}>Export PDF</Text></Pressable>
             </View>
             {message ? <Text style={styles.message}>{message}</Text> : null}
             {filtered.map((receipt) => (
@@ -141,7 +142,7 @@ export function VaultScreen() {
                 <View style={styles.rowEmoji}><Text style={styles.rowEmojiText}>{CATEGORY_EMOJI[receipt.category]}</Text></View>
                 <View style={styles.rowCopy}>
                   <Text style={styles.merchant}>{receipt.merchant}</Text>
-                  <Text style={styles.meta}>{formatIsoDate(receipt.date)} · {receipt.category}</Text>
+                  <Text style={styles.meta}>{formatIsoDate(receipt.date)} · {CATEGORY_LABEL[receipt.category]}</Text>
                 </View>
                 <Text style={styles.amount}>{formatMoney(receipt.total, currency.locale)}</Text>
               </View>
@@ -153,7 +154,7 @@ export function VaultScreen() {
       <Modal animationType="slide" transparent visible={sheet} onRequestClose={() => setSheet(false)}>
         <Pressable style={styles.backdrop} onPress={() => setSheet(false)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
-            <Text style={styles.sheetTitle}>Currency & tax year</Text>
+            <Text style={styles.sheetTitle}>Currency and year</Text>
             {LOCALES.map((item) => (
               <Pressable key={item.code} onPress={() => { void currency.setCurrency(item.code); }} style={styles.sheetRow}>
                 <Text style={styles.sheetRowText}>{item.flag} {item.country} ({item.code})</Text>
@@ -168,7 +169,7 @@ export function VaultScreen() {
               ))}
             </View>
             <Pressable onPress={() => { setSheet(false); void currency.rerunSetup(); }} style={styles.rerun}>
-              <Text style={styles.link}>Re-run Setup / Currency</Text>
+              <Text style={styles.link}>Change country</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -192,7 +193,7 @@ const styles = StyleSheet.create({
   savings: { marginTop: 12, backgroundColor: colors.accentEmeraldBg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   savingsText: { color: colors.accentEmerald, fontWeight: '700' },
   scanPill: { marginTop: 22, height: 54, width: '100%', borderRadius: 999, backgroundColor: '#111111', alignItems: 'center', justifyContent: 'center' },
-  scanPillText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16 },
+  scanPillText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
   exportRow: { marginTop: 10, width: '100%', flexDirection: 'row', gap: 10 },
   exportPill: { flex: 1, minHeight: 44, borderRadius: 999, backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#E4E7EC', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   exportText: { color: colors.textPrimary, fontWeight: '700', fontSize: 13, textAlign: 'center' },
@@ -209,7 +210,8 @@ const styles = StyleSheet.create({
   emptyWrap: { marginTop: 24, flexGrow: 1, justifyContent: 'center' },
   empty: { backgroundColor: colors.bgCard, borderRadius: 28, borderWidth: 1, borderColor: colors.borderLight, padding: 28, alignItems: 'center', ...cardShadow },
   emptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.bgSubtle, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { marginTop: 12, fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+  emptyTitle: { marginTop: 12, fontSize: 18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
+  emptySubtitle: { marginTop: 6, fontSize: 14, lineHeight: 20, color: colors.textSecondary, textAlign: 'center' },
   emptyButton: { marginTop: 16, backgroundColor: '#111111', borderRadius: 999, paddingHorizontal: 18, height: 48, alignItems: 'center', justifyContent: 'center' },
   emptyButtonText: { color: '#FFFFFF', fontWeight: '700' },
   row: { backgroundColor: colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: colors.borderLight, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },

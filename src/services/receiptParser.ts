@@ -181,7 +181,7 @@ function detectReference(lines: string[]): string {
 }
 
 function detectLineItems(lines: string[]): LineItem[] {
-  const skip = /subtotal|sub-total|sub total|\btotal\b|\btax\b|\bvat\b|\bgst\b|\bdate\b|reference|receipt|thank you|\binclusive\b|\bexclusive\b|\bspeedpoint\b|\bdownload\b|\bapp\b|\bslip\b|\bcashier\b|\bcard\b|\bauth\b|\bchange\b/i;
+  const skip = /subtotal|sub-total|sub total|\btotal\b|\btax\b|\bvat\b|\bgst\b|\bdate\b|reference|receipt|thank you|\binclusive\b|\bexclusive\b|\bspeedpoint\b|\bdownload\b|\bapp\b|\bslip\b|\bcashier\b|\bcard\b|\bauth\b|\bchange\b|\btel\b|served by/i;
   const items: LineItem[] = [];
   for (const line of lines) {
     if (skip.test(line)) continue;
@@ -194,7 +194,7 @@ function detectLineItems(lines: string[]): LineItem[] {
   return items;
 }
 
-const REFRESHMENT_TOKENS = ['stoney', 'coke', 'sprite', 'water', 'soda', 'coffee', 'snack', 'bread', 'freshstop'];
+const REFRESHMENT_TOKENS = ['stoney', 'coke', 'sprite', 'water', 'soda', 'coffee', 'snack', 'food', 'bread', 'muffin', 'freshstop'];
 const FUEL_TOKENS = ['petrol', 'diesel', 'unleaded', 'fuel', 'litres'];
 
 function lineHasToken(line: string, tokens: string[]): boolean {
@@ -204,8 +204,10 @@ function lineHasToken(line: string, tokens: string[]): boolean {
 
 function suggestCategory(merchant: string, lines: string[]): Category {
   const haystack = [merchant, ...lines];
-  if (haystack.some((line) => lineHasToken(line, REFRESHMENT_TOKENS))) return 'Business Meals & Refreshments';
-  if (haystack.some((line) => lineHasToken(line, FUEL_TOKENS))) return 'Fuel & Mileage';
+  if (lines.some((line) => lineHasToken(line, REFRESHMENT_TOKENS)) || lineHasToken(merchant, REFRESHMENT_TOKENS)) {
+    return 'Business Meals & Refreshments';
+  }
+  if (lines.some((line) => lineHasToken(line, FUEL_TOKENS))) return 'Fuel & Mileage';
   const text = haystack.join(' ').toLowerCase();
   const rules: Array<[Category, string[]]> = [
     ['Software', ['adobe', 'github', 'software', 'saas', 'google workspace']],
@@ -311,10 +313,21 @@ export const CATEGORIES: readonly Category[] = [
   'Other',
 ];
 
+export const CATEGORY_LABEL: Record<Category, string> = {
+  'Supplies & Materials': 'Supplies',
+  'Fuel & Mileage': 'Fuel',
+  'Business Meals & Refreshments': 'Meals and drinks',
+  'Tools & Equipment': 'Tools',
+  Software: 'Software',
+  Travel: 'Travel',
+  Utilities: 'Bills',
+  Other: 'Other',
+};
+
 export const CATEGORY_EMOJI: Record<Category, string> = {
   'Supplies & Materials': '📎',
   'Fuel & Mileage': '⛽',
-  'Business Meals & Refreshments': '🍔',
+  'Business Meals & Refreshments': '🍽️',
   'Tools & Equipment': '🛠️',
   Software: '🖥️',
   Travel: '✈️',

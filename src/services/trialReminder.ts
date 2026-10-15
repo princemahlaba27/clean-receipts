@@ -24,7 +24,7 @@ export async function scheduleTrialReminder(): Promise<void> {
       identifier: REMINDER_ID,
       content: {
         title: 'Tax Receipts: Trial Ending Tomorrow',
-        body: 'Your free trial expires in 24 hours. Your receipts and vault remain completely safe.',
+        body: 'Your free trial expires in 24 hours. Your receipts stay safe.',
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
